@@ -2,27 +2,17 @@ import io
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
-from reportlab.lib.pagesizes import letter, A4
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch
-from reportlab.lib import colors
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.lib.enums import TA_RIGHT, TA_CENTER
-import arabic_reshaper
-from bidi.algorithm import get_display
 from utils_pdf import make_asset_pdf
 from utils_prepare import prepare_dataframe, guess_columns, parse_coordinates
 
 # إعداد الصفحة
 st.set_page_config(
-    page_title="نظام إدارة الأصول - تقارير PDF",
+    page_title="نظام إدارة الأصول - تقارير متكاملة",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# تنسيقات CSS مخصصة للبطاقات والجداول
+# تنسيقات CSS مخصصة للبطاقات والجداول والطباعة
 st.markdown("""
 <style>
     .main-header {
@@ -52,46 +42,6 @@ st.markdown("""
         padding: 15px;
         border-radius: 10px 10px 0 0;
         margin: -20px -20px 20px -20px;
-    }
-    .info-row {
-        display: flex;
-        justify-content: space-between;
-        padding: 10px 0;
-        border-bottom: 1px solid #f0f0f0;
-    }
-    .info-label {
-        font-weight: bold;
-        color: #333;
-        min-width: 200px;
-    }
-    .info-value {
-        color: #666;
-        text-align: left;
-        flex-grow: 1;
-    }
-    .financial-value {
-        background: linear-gradient(135deg, #F18F01, #FFB347);
-        color: white;
-        padding: 8px 12px;
-        border-radius: 8px;
-        font-weight: bold;
-        text-align: center;
-    }
-    .location-value {
-        background: linear-gradient(135deg, #3F7CAC, #5BA8D8);
-        color: white;
-        padding: 8px 12px;
-        border-radius: 8px;
-        font-weight: bold;
-        text-align: center;
-    }
-    .building-value {
-        background: linear-gradient(135deg, #11998e, #38ef7d);
-        color: white;
-        padding: 8px 12px;
-        border-radius: 8px;
-        font-weight: bold;
-        text-align: center;
     }
     .section-title {
         background: linear-gradient(135deg, #A23B72, #C73E1D);
@@ -135,32 +85,43 @@ st.markdown("""
         border-radius: 8px;
         text-align: center;
     }
-    .pdf-button {
-        background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+    .printable-table {
+        border-collapse: collapse;
+        width: 100%;
+        font-family: Arial, sans-serif;
+        font-size: 12px;
+    }
+    .printable-table th {
+        background-color: #1f77b4;
         color: white;
-        padding: 12px 24px;
-        border: none;
-        border-radius: 8px;
-        font-size: 16px;
+        padding: 12px 8px;
+        text-align: center;
+        border: 1px solid #1f77b4;
         font-weight: bold;
-        cursor: pointer;
-        margin: 5px;
     }
-    .pdf-button:hover {
-        background: linear-gradient(135deg, #ee5a24, #ff6b6b);
+    .printable-table td {
+        padding: 10px 8px;
+        border: 1px solid #ddd;
+        text-align: center;
     }
-    @media (max-width: 768px) {
-        .quick-stats {
-            grid-template-columns: 1fr;
+    .printable-table tr:nth-child(even) {
+        background-color: #f8f9fa;
+    }
+    @media print {
+        .no-print {
+            display: none !important;
         }
-        .location-grid {
-            grid-template-columns: 1fr;
+        .printable-table {
+            font-size: 10px;
+        }
+        body {
+            zoom: 80%;
         }
     }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<h1 class="main-header">نظام إدارة الأصول - تقارير PDF شاملة</h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="main-header">نظام إدارة الأصول - تقارير متكاملة</h1>', unsafe_allow_html=True)
 
 # الشريط الجانبي
 with st.sidebar:
@@ -179,13 +140,7 @@ with st.sidebar:
     )
     
     st.markdown("---")
-    st.header("📊 خيارات PDF")
-    pdf_report_type = st.selectbox(
-        "نوع التقرير:",
-        ["تقرير مفصل لكل أصل", "تقرير شامل لجميع الأصول", "تقرير إحصائي"]
-    )
-    
-    st.caption("الإصدار: 5.0 - تقارير PDF شاملة")
+    st.caption("الإصدار: 5.1 - تقارير HTML قابلة للطباعة")
 
 # معالجة حالة عدم رفع ملف
 if uploaded_file is None:
@@ -339,51 +294,103 @@ with col4:
     </div>
     """, unsafe_allow_html=True)
 
-# دالة لإنشاء PDF شامل
-def create_comprehensive_pdf(assets_data, report_type="تقرير شامل لجميع الأصول"):
-    """إنشاء تقرير PDF شامل"""
+# دالة لإنشاء تقرير HTML شامل
+def create_html_report(assets_data, report_type="تقرير شامل"):
+    """إنشاء تقرير HTML شامل قابل للطباعة"""
     
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=18)
-    
-    elements = []
-    styles = getSampleStyleSheet()
-    
-    # إضافة نمط للنص العربي
-    arabic_style = ParagraphStyle(
-        'ArabicStyle',
-        parent=styles['Normal'],
-        fontName='Helvetica',
-        fontSize=10,
-        alignment=TA_RIGHT,
-        rightIndent=0,
-        wordWrap='RTL'
-    )
-    
-    # عنوان التقرير
-    title_style = ParagraphStyle(
-        'TitleStyle',
-        parent=styles['Heading1'],
-        fontName='Helvetica-Bold',
-        fontSize=16,
-        alignment=TA_CENTER,
-        spaceAfter=30
-    )
-    
-    title = Paragraph(f"تقرير شامل للأصول - {report_type}", title_style)
-    elements.append(title)
-    
-    # معلومات التقرير
-    info_text = f"""
-    <b>تاريخ التقرير:</b> {pd.Timestamp.now().strftime('%Y-%m-%d')}<br/>
-    <b>عدد الأصول:</b> {len(assets_data):,}<br/>
-    <b>إجمالي التكلفة:</b> {total_cost:,.2f}<br/>
-    <b>صافي القيمة الدفترية:</b> {total_nbv:,.2f}<br/>
+    html_content = f"""
+    <!DOCTYPE html>
+    <html dir="rtl" lang="ar">
+    <head>
+        <meta charset="UTF-8">
+        <title>{report_type} - نظام إدارة الأصول</title>
+        <style>
+            body {{
+                font-family: 'Arial', sans-serif;
+                margin: 20px;
+                line-height: 1.6;
+                color: #333;
+            }}
+            .header {{
+                text-align: center;
+                background: linear-gradient(135deg, #1f77b4, #2E86AB);
+                color: white;
+                padding: 20px;
+                border-radius: 10px;
+                margin-bottom: 30px;
+            }}
+            .report-info {{
+                background: #f8f9fa;
+                padding: 15px;
+                border-radius: 8px;
+                margin-bottom: 20px;
+                border-right: 4px solid #1f77b4;
+            }}
+            .printable-table {{
+                width: 100%;
+                border-collapse: collapse;
+                margin: 20px 0;
+                font-size: 12px;
+            }}
+            .printable-table th {{
+                background-color: #1f77b4;
+                color: white;
+                padding: 12px 8px;
+                text-align: center;
+                border: 1px solid #1f77b4;
+                font-weight: bold;
+            }}
+            .printable-table td {{
+                padding: 10px 8px;
+                border: 1px solid #ddd;
+                text-align: center;
+            }}
+            .printable-table tr:nth-child(even) {{
+                background-color: #f8f9fa;
+            }}
+            .printable-table tr:hover {{
+                background-color: #e9ecef;
+            }}
+            .financial-cell {{
+                background-color: #fff3cd;
+                font-weight: bold;
+            }}
+            .footer {{
+                text-align: center;
+                margin-top: 40px;
+                padding: 20px;
+                background: #f8f9fa;
+                border-radius: 8px;
+                font-size: 12px;
+                color: #666;
+            }}
+            @media print {{
+                body {{
+                    margin: 0;
+                    padding: 20px;
+                }}
+                .printable-table {{
+                    font-size: 10px;
+                }}
+                .no-print {{
+                    display: none;
+                }}
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>{report_type}</h1>
+            <h2>نظام إدارة الأصول</h2>
+        </div>
+        
+        <div class="report-info">
+            <p><strong>تاريخ التقرير:</strong> {pd.Timestamp.now().strftime('%Y-%m-%d')}</p>
+            <p><strong>عدد الأصول:</strong> {len(assets_data):,}</p>
+            <p><strong>إجمالي التكلفة:</strong> {total_cost:,.2f}</p>
+            <p><strong>صافي القيمة الدفترية:</strong> {total_nbv:,.2f}</p>
+        </div>
     """
-    
-    info_paragraph = Paragraph(info_text, arabic_style)
-    elements.append(info_paragraph)
-    elements.append(Spacer(1, 20))
     
     if report_type == "تقرير إحصائي":
         # إحصائيات حسب المدينة
@@ -394,48 +401,45 @@ def create_comprehensive_pdf(assets_data, report_type="تقرير شامل لج�
                 unique_asset_col: 'count'
             }).reset_index()
             
-            city_stats.columns = ['المدينة', 'إجمالي التكلفة', 'صافي القيمة', 'عدد الأصول']
-            
-            # إنشاء جدول الإحصائيات
-            data = [['المدينة', 'عدد الأصول', 'إجمالي التكلفة', 'صافي القيمة']]
+            html_content += """
+            <h3 style="text-align: center; color: #1f77b4;">الإحصائيات حسب المدينة</h3>
+            <table class="printable-table">
+                <thead>
+                    <tr>
+                        <th>المدينة</th>
+                        <th>عدد الأصول</th>
+                        <th>إجمالي التكلفة</th>
+                        <th>صافي القيمة</th>
+                    </tr>
+                </thead>
+                <tbody>
+            """
             
             for _, row in city_stats.iterrows():
-                data.append([
-                    str(row['المدينة']),
-                    str(row['عدد الأصول']),
-                    f"{row['إجمالي التكلفة']:,.2f}",
-                    f"{row['صافي القيمة']:,.2f}"
-                ])
+                html_content += f"""
+                    <tr>
+                        <td>{row[city_col]}</td>
+                        <td>{row[unique_asset_col]:,}</td>
+                        <td class="financial-cell">{row[cost_col]:,.2f}</td>
+                        <td class="financial-cell">{row[nbv_col]:,.2f}</td>
+                    </tr>
+                """
             
-            table = Table(data)
-            table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f77b4')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 12),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-                ('FONTSIZE', (0, 1), (-1, -1), 10),
-                ('GRID', (0, 0), (-1, -1), 1, colors.black)
-            ]))
-            
-            elements.append(table)
-            
+            html_content += """
+                </tbody>
+            </table>
+            """
     else:
-        # بيانات مفصلة لكل أصل
+        # جدول البيانات التفصيلي
         display_columns = [
             unique_asset_col, tag_col, desc_col, 
             cost_col, nbv_col, city_col,
             building_col, floor_col, room_col
         ]
         
-        # تصفية الأعمدة الموجودة فقط
         available_columns = [col for col in display_columns if col in assets_data.columns]
         
         if available_columns:
-            # عناوين الأعمدة
             headers = {
                 unique_asset_col: 'رقم الأصل',
                 tag_col: 'رقم الوسم',
@@ -448,178 +452,59 @@ def create_comprehensive_pdf(assets_data, report_type="تقرير شامل لج�
                 room_col: 'الغرفة'
             }
             
-            data = [[headers.get(col, col) for col in available_columns]]
+            html_content += f"""
+            <h3 style="text-align: center; color: #1f77b4;">البيانات التفصيلية للأصول</h3>
+            <table class="printable-table">
+                <thead>
+                    <tr>
+            """
+            
+            for col in available_columns:
+                html_content += f"<th>{headers.get(col, col)}</th>"
+            
+            html_content += """
+                    </tr>
+                </thead>
+                <tbody>
+            """
             
             for _, asset in assets_data.iterrows():
-                row_data = []
+                html_content += "<tr>"
                 for col in available_columns:
                     value = asset[col]
                     if pd.isna(value):
-                        row_data.append("---")
+                        html_content += "<td>---</td>"
                     elif col in [cost_col, nbv_col]:
                         try:
-                            row_data.append(f"{float(value):,.2f}")
+                            html_content += f"<td class='financial-cell'>{float(value):,.2f}</td>"
                         except:
-                            row_data.append(str(value))
+                            html_content += f"<td>{value}</td>"
                     else:
-                        # تقصير الوصف الطويل
                         if col == desc_col and len(str(value)) > 50:
-                            row_data.append(str(value)[:50] + "...")
+                            html_content += f"<td>{str(value)[:50]}...</td>"
                         else:
-                            row_data.append(str(value))
-                data.append(row_data)
+                            html_content += f"<td>{value}</td>"
+                html_content += "</tr>"
             
-            # إنشاء الجدول
-            table = Table(data, repeatRows=1)
-            table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f77b4')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 10),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-                ('FONTSIZE', (0, 1), (-1, -1), 8),
-                ('GRID', (0, 0), (-1, -1), 1, colors.black),
-                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey])
-            ]))
-            
-            elements.append(table)
+            html_content += """
+                </tbody>
+            </table>
+            """
     
-    # تذييل الصفحة
-    elements.append(Spacer(1, 20))
-    footer = Paragraph(f"تم إنشاء التقرير بواسطة نظام إدارة الأصول - {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}", arabic_style)
-    elements.append(footer)
+    html_content += f"""
+        <div class="footer">
+            <p>تم إنشاء هذا التقرير تلقائياً بواسطة نظام إدارة الأصول</p>
+            <p>تاريخ الإنشاء: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}</p>
+        </div>
+        
+        <div class="no-print" style="text-align: center; margin-top: 20px;">
+            <button onclick="window.print()" style="padding: 10px 20px; background: #1f77b4; color: white; border: none; border-radius: 5px; cursor: pointer;">🖨️ طباعة التقرير</button>
+        </div>
+    </body>
+    </html>
+    """
     
-    # بناء PDF
-    doc.build(elements)
-    buffer.seek(0)
-    return buffer
-
-# دالة لإنشاء PDF مفصل لأصل واحد
-def create_single_asset_pdf(asset_data):
-    """إنشاء PDF مفصل لأصل واحد"""
-    
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=18)
-    
-    elements = []
-    styles = getSampleStyleSheet()
-    
-    # إضافة نمط للنص العربي
-    arabic_style = ParagraphStyle(
-        'ArabicStyle',
-        parent=styles['Normal'],
-        fontName='Helvetica',
-        fontSize=12,
-        alignment=TA_RIGHT,
-        rightIndent=0,
-        wordWrap='RTL'
-    )
-    
-    # عنوان التقرير
-    title_style = ParagraphStyle(
-        'TitleStyle',
-        parent=styles['Heading1'],
-        fontName='Helvetica-Bold',
-        fontSize=18,
-        alignment=TA_CENTER,
-        spaceAfter=30
-    )
-    
-    asset_id = asset_data[unique_asset_col] if unique_asset_col in asset_data and pd.notna(asset_data[unique_asset_col]) else "غير محدد"
-    title = Paragraph(f"تقرير مفصل للأصل - {asset_id}", title_style)
-    elements.append(title)
-    
-    # معلومات الأساسية
-    elements.append(Paragraph("<b>المعلومات الأساسية:</b>", arabic_style))
-    
-    basic_info = [
-        ("رقم الأصل الفريد", unique_asset_col),
-        ("رقم الوسم", tag_col),
-        ("وصف الأصل", desc_col)
-    ]
-    
-    basic_data = [['المعلومة', 'القيمة']]
-    for label, col in basic_info:
-        if col in asset_data and pd.notna(asset_data[col]):
-            basic_data.append([label, str(asset_data[col])])
-    
-    basic_table = Table(basic_data)
-    basic_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f77b4')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 12),
-        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-        ('GRID', (0, 0), (-1, -1), 1, colors.black)
-    ]))
-    
-    elements.append(basic_table)
-    elements.append(Spacer(1, 20))
-    
-    # المعلومات المالية
-    elements.append(Paragraph("<b>المعلومات المالية:</b>", arabic_style))
-    
-    financial_data = [['البند', 'القيمة']]
-    if cost_col in asset_data and pd.notna(asset_data[cost_col]):
-        try:
-            financial_data.append(['التكلفة', f"{float(asset_data[cost_col]):,.2f}"])
-        except:
-            financial_data.append(['التكلفة', str(asset_data[cost_col])])
-    
-    if nbv_col in asset_data and pd.notna(asset_data[nbv_col]):
-        try:
-            financial_data.append(['صافي القيمة الدفترية', f"{float(asset_data[nbv_col]):,.2f}"])
-        except:
-            financial_data.append(['صافي القيمة الدفترية', str(asset_data[nbv_col])])
-    
-    financial_table = Table(financial_data)
-    financial_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#F18F01')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('BACKGROUND', (0, 1), (-1, -1), colors.lightyellow),
-        ('GRID', (0, 0), (-1, -1), 1, colors.black)
-    ]))
-    
-    elements.append(financial_table)
-    elements.append(Spacer(1, 20))
-    
-    # معلومات الموقع
-    elements.append(Paragraph("<b>معلومات الموقع:</b>", arabic_style))
-    
-    location_data = [['نوع الموقع', 'القيمة']]
-    location_fields = [
-        ("المدينة", city_col),
-        ("رقم المبنى", building_col),
-        ("الدور", floor_col),
-        ("الغرفة/المكتب", room_col)
-    ]
-    
-    for label, col in location_fields:
-        if col in asset_data and pd.notna(asset_data[col]):
-            location_data.append([label, str(asset_data[col])])
-    
-    location_table = Table(location_data)
-    location_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3F7CAC')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('BACKGROUND', (0, 1), (-1, -1), colors.lightblue),
-        ('GRID', (0, 0), (-1, -1), 1, colors.black)
-    ]))
-    
-    elements.append(location_table)
-    
-    # بناء PDF
-    doc.build(elements)
-    buffer.seek(0)
-    return buffer
+    return html_content
 
 # دالة لعرض بطاقة الأصل
 def display_asset_card(asset_data):
@@ -638,27 +523,126 @@ def display_asset_card(asset_data):
                 unsafe_allow_html=True
             )
         
-        # ... (بقية كود البطاقة كما هو سابقاً)
-        # [يتم حذف جزء من الكود للإيجاز - الكود السابق للبطاقة يبقى كما هو]
+        # المعلومات الأساسية
+        st.markdown(
+            '<div style="background: linear-gradient(135deg, #A23B72, #C73E1D); color: white; padding: 12px; border-radius: 8px; margin: 20px 0 15px 0; font-weight: bold; text-align: center;">'
+            '🆔 المعلومات الأساسية'
+            '</div>',
+            unsafe_allow_html=True
+        )
         
-        # أزرار PDF محسنة
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if unique_asset_col in asset_data and pd.notna(asset_data[unique_asset_col]):
+                st.metric("رقم الأصل الفريد", str(asset_data[unique_asset_col]))
+        
+        with col2:
+            if tag_col in asset_data and pd.notna(asset_data[tag_col]):
+                st.metric("رقم الوسم", str(asset_data[tag_col]))
+        
+        with col3:
+            if desc_col in asset_data and pd.notna(asset_data[desc_col]):
+                description = str(asset_data[desc_col])
+                if len(description) > 50:
+                    description = description[:50] + "..."
+                st.metric("وصف الأصل", description)
+        
+        # المعلومات المالية
+        st.markdown(
+            '<div style="background: linear-gradient(135deg, #A23B72, #C73E1D); color: white; padding: 12px; border-radius: 8px; margin: 20px 0 15px 0; font-weight: bold; text-align: center;">'
+            '💰 المعلومات المالية'
+            '</div>',
+            unsafe_allow_html=True
+        )
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if cost_col in asset_data and pd.notna(asset_data[cost_col]):
+                try:
+                    cost_value = f"{float(asset_data[cost_col]):,.2f}"
+                    st.markdown(
+                        f'<div style="background: linear-gradient(135deg, #F18F01, #FFB347); color: white; padding: 15px; border-radius: 10px; text-align: center;">'
+                        f'<h4 style="margin:0; font-size: 14px;">التكلفة</h4>'
+                        f'<p style="margin:0; font-size: 18px; font-weight: bold;">{cost_value}</p>'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
+                except:
+                    st.info(f"التكلفة: {asset_data[cost_col]}")
+        
+        with col2:
+            if nbv_col in asset_data and pd.notna(asset_data[nbv_col]):
+                try:
+                    nbv_value = f"{float(asset_data[nbv_col]):,.2f}"
+                    st.markdown(
+                        f'<div style="background: linear-gradient(135deg, #F18F01, #FFB347); color: white; padding: 15px; border-radius: 10px; text-align: center;">'
+                        f'<h4 style="margin:0; font-size: 14px;">صافي القيمة الدفترية</h4>'
+                        f'<p style="margin:0; font-size: 18px; font-weight: bold;">{nbv_value}</p>'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
+                except:
+                    st.info(f"صافي القيمة: {asset_data[nbv_col]}")
+        
+        # معلومات الموقع التفصيلية
+        st.markdown(
+            '<div style="background: linear-gradient(135deg, #A23B72, #C73E1D); color: white; padding: 12px; border-radius: 8px; margin: 20px 0 15px 0; font-weight: bold; text-align: center;">'
+            '📍 معلومات الموقع التفصيلية'
+            '</div>',
+            unsafe_allow_html=True
+        )
+        
+        if city_col in asset_data and pd.notna(asset_data[city_col]):
+            st.markdown(
+                f'<div style="background: linear-gradient(135deg, #3F7CAC, #5BA8D8); color: white; padding: 15px; border-radius: 10px; text-align: center; margin-bottom: 15px;">'
+                f'<h4 style="margin:0; font-size: 14px;">المدينة</h4>'
+                f'<p style="margin:0; font-size: 18px; font-weight: bold;">{asset_data[city_col]}</p>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+        
+        st.markdown('<div class="location-grid">', unsafe_allow_html=True)
+        
+        for col, label, icon in [
+            (building_col, "رقم المبنى", "🏢"),
+            (floor_col, "رقم الدور", "🏢"), 
+            (room_col, "رقم الغرفة/المكتب", "🚪")
+        ]:
+            if col in asset_data and pd.notna(asset_data[col]):
+                value = str(asset_data[col])
+            else:
+                value = "غير محدد"
+            
+            st.markdown(
+                f'<div class="location-item">'
+                f'<h4 style="margin:0; font-size: 14px;">{icon} {label}</h4>'
+                f'<p style="margin:0; font-size: 16px; font-weight: bold;">{value}</p>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # أزرار التحكم
         st.markdown("---")
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            if st.button("📄 إنشاء PDF مفصل", key=f"pdf_single_{asset_data.name}"):
+            if st.button("📄 تقرير HTML", key=f"html_{asset_data.name}"):
                 try:
-                    pdf_buffer = create_single_asset_pdf(asset_data)
-                    asset_id = asset_data[unique_asset_col] if unique_asset_col in asset_data and pd.notna(asset_data[unique_asset_col]) else f"asset_{asset_data.name}"
+                    single_asset_df = pd.DataFrame([asset_data])
+                    html_content = create_html_report(single_asset_df, f"تقرير مفصل للأصل {asset_data.get(unique_asset_col, '')}")
                     st.download_button(
-                        "⬇️ تحميل PDF مفصل",
-                        data=pdf_buffer,
-                        file_name=f"تقرير_مفصل_{asset_id}.pdf",
-                        mime="application/pdf",
-                        key=f"dl_single_{asset_data.name}"
+                        "⬇️ تحميل HTML",
+                        data=html_content,
+                        file_name=f"تقرير_مفصل_{asset_data.get(unique_asset_col, asset_data.name)}.html",
+                        mime="text/html",
+                        key=f"dl_html_{asset_data.name}"
                     )
                 except Exception as e:
-                    st.error(f"خطأ في إنشاء PDF: {e}")
+                    st.error(f"خطأ في إنشاء التقرير: {e}")
         
         with col2:
             if st.button("📊 تحليل مفصل", key=f"analyze_{asset_data.name}"):
@@ -672,9 +656,9 @@ def display_asset_card(asset_data):
                 </script>
                 """, unsafe_allow_html=True)
 
-# قسم إنشاء التقارير PDF
+# قسم إنشاء التقارير
 st.markdown("---")
-st.subheader("📄 إنشاء تقارير PDF")
+st.subheader("📄 إنشاء تقارير قابلة للطباعة")
 
 col1, col2, col3 = st.columns(3)
 
@@ -682,15 +666,20 @@ with col1:
     if st.button("📋 تقرير شامل لجميع الأصول", use_container_width=True):
         with st.spinner("جاري إنشاء التقرير الشامل..."):
             try:
-                pdf_buffer = create_comprehensive_pdf(df_filtered, "تقرير شامل لجميع الأصول")
+                html_content = create_html_report(df_filtered, "تقرير شامل لجميع الأصول")
                 st.success("✅ تم إنشاء التقرير الشامل بنجاح!")
                 st.download_button(
-                    "⬇️ تحميل التقرير الشامل",
-                    data=pdf_buffer,
-                    file_name="تقرير_الأصول_الشامل.pdf",
-                    mime="application/pdf",
+                    "⬇️ تحميل التقرير HTML",
+                    data=html_content,
+                    file_name="تقرير_الأصول_الشامل.html",
+                    mime="text/html",
                     use_container_width=True
                 )
+                
+                # عرض معاينة
+                with st.expander("معاينة التقرير"):
+                    st.components.v1.html(html_content, height=600, scrolling=True)
+                    
             except Exception as e:
                 st.error(f"❌ خطأ في إنشاء التقرير: {e}")
 
@@ -698,13 +687,13 @@ with col2:
     if st.button("📊 تقرير إحصائي", use_container_width=True):
         with st.spinner("جاري إنشاء التقرير الإحصائي..."):
             try:
-                pdf_buffer = create_comprehensive_pdf(df_filtered, "تقرير إحصائي")
+                html_content = create_html_report(df_filtered, "تقرير إحصائي")
                 st.success("✅ تم إنشاء التقرير الإحصائي بنجاح!")
                 st.download_button(
                     "⬇️ تحميل التقرير الإحصائي",
-                    data=pdf_buffer,
-                    file_name="تقرير_إحصائي_الأصول.pdf",
-                    mime="application/pdf",
+                    data=html_content,
+                    file_name="تقرير_إحصائي_الأصول.html",
+                    mime="text/html",
                     use_container_width=True
                 )
             except Exception as e:
@@ -743,14 +732,67 @@ with col3:
             except Exception as e:
                 st.error(f"❌ خطأ في إنشاء ملف Excel: {e}")
 
-# ... (بقية الكود يبقى كما هو)
+# عرض النتائج
+st.markdown("---")
+st.subheader(f"📋 نتائج البحث ({total_assets} أصل)")
+
+# تقسيم الصفحات
+if total_assets > 0:
+    total_pages = (total_assets - 1) // items_per_page + 1
+    current_page = st.number_input("الصفحة", min_value=1, max_value=total_pages, value=1)
+    start_idx = (current_page - 1) * items_per_page
+    end_idx = min(start_idx + items_per_page, total_assets)
+    
+    st.caption(f"عرض النتائج من {start_idx + 1} إلى {end_idx} من إجمالي {total_assets} أصل")
+
+# عرض البطاقات التفصيلية
+if display_mode in ["بطاقات تفصيلية", "كلا الوضعين"]:
+    st.markdown("### 🎴 البطاقات التفصيلية")
+    
+    if total_assets > 0:
+        assets_to_display = df_filtered.iloc[start_idx:end_idx]
+        
+        for idx, asset in assets_to_display.iterrows():
+            asset.name = idx
+            display_asset_card(asset)
+
+# عرض الجدول التقليدي
+if display_mode in ["جدول تقليدي", "كلا الوضعين"]:
+    st.markdown("### 📊 عرض جدولي")
+    
+    if total_assets > 0:
+        display_columns = [
+            unique_asset_col, tag_col, desc_col, 
+            cost_col, nbv_col, city_col,
+            building_col, floor_col, room_col
+        ]
+        
+        available_columns = [col for col in display_columns if col in df_filtered.columns]
+        
+        if available_columns:
+            display_df = df_filtered[available_columns].iloc[start_idx:end_idx].copy()
+            
+            if cost_col in display_df.columns:
+                display_df[cost_col] = display_df[cost_col].apply(
+                    lambda x: f"{x:,.2f}" if pd.notna(x) and str(x).replace('.','').isdigit() else str(x)
+                )
+            if nbv_col in display_df.columns:
+                display_df[nbv_col] = display_df[nbv_col].apply(
+                    lambda x: f"{x:,.2f}" if pd.notna(x) and str(x).replace('.','').isdigit() else str(x)
+                )
+            
+            st.dataframe(
+                display_df,
+                use_container_width=True,
+                height=400
+            )
 
 # تذييل الصفحة
 st.markdown("---")
 st.markdown(
     '<div style="text-align: center; padding: 20px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; border-radius: 10px;">'
-    '<h3 style="margin:0;">✅ الإصدار 5.0 - تقارير PDF شاملة</h3>'
-    '<p style="margin:5px 0 0 0;">تقارير PDF متكاملة قابلة للطباعة والتحميل</p>'
+    '<h3 style="margin:0;">✅ الإصدار 5.1 - تقارير HTML قابلة للطباعة</h3>'
+    '<p style="margin:5px 0 0 0;">تقارير متكاملة قابلة للطباعة والتحميل بتنسيق HTML</p>'
     '</div>', 
     unsafe_allow_html=True
 )
