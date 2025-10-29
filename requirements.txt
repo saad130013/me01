@@ -1,4 +1,11 @@
-
+streamlit
+pandas
+openpyxl
+xlsxwriter
+matplotlib
+reportlab
+arabic-reshaper
+python-bidi
 streamlit
 pandas
 openpyxl
