@@ -3,8 +3,6 @@ import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
 import numpy as np
-import plotly.express as px
-import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from utils_pdf import make_asset_pdf
 from utils_prepare import prepare_dataframe, guess_columns, parse_coordinates
@@ -73,6 +71,13 @@ st.markdown("""
         margin: 20px 0 15px 0;
         font-weight: bold;
         text-align: center;
+    }
+    .search-box {
+        background: linear-gradient(135deg, #11998e, #38ef7d);
+        color: white;
+        padding: 20px;
+        border-radius: 15px;
+        margin-bottom: 20px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -208,31 +213,6 @@ def smart_search(df, query):
     
     return df[mask]
 
-def highlight_search_terms(text, query):
-    """تظليل كلمات البحث في النتائج"""
-    if not query or not text:
-        return text
-    
-    highlighted = str(text)
-    words = query.lower().split()
-    
-    for word in words:
-        if len(word) > 2:
-            # البحث عن الكلمة مع تجاهل حالة الأحرف
-            start = 0
-            while True:
-                pos = highlighted.lower().find(word, start)
-                if pos == -1:
-                    break
-                # استبدال النص مع الحفاظ على حالة الأحرف الأصلية
-                original_word = highlighted[pos:pos+len(word)]
-                highlighted = (highlighted[:pos] + 
-                             f'<span class="search-highlight">{original_word}</span>' + 
-                             highlighted[pos+len(word):])
-                start = pos + len(word) + len('<span class="search-highlight"></span>') - len(word)
-    
-    return highlighted
-
 # 📊 1. لوحة التحكم التفاعلية (Dashboard)
 def create_dashboard(df):
     """إنشاء لوحة تحكم تفاعلية مع مؤشرات الأداء"""
@@ -303,25 +283,38 @@ def create_dashboard(df):
     with col1:
         # توزيع الأصول حسب المدينة
         if city_col in df.columns:
-            city_distribution = df[city_col].value_counts().head(10)
-            fig1 = px.pie(
-                values=city_distribution.values,
-                names=city_distribution.index,
-                title="توزيع الأصول حسب المدينة"
+            city_distribution = df[city_col].value_counts().head(8)
+            
+            fig, ax = plt.subplots(figsize=(10, 6))
+            colors = plt.cm.Set3(np.linspace(0, 1, len(city_distribution)))
+            wedges, texts, autotexts = ax.pie(
+                city_distribution.values, 
+                labels=city_distribution.index,
+                autopct='%1.1f%%',
+                startangle=90,
+                colors=colors
             )
-            st.plotly_chart(fig1, use_container_width=True)
+            
+            # تحسين مظهر النصوص
+            for autotext in autotexts:
+                autotext.set_color('white')
+                autotext.set_fontweight('bold')
+            
+            ax.set_title('توزيع الأصول حسب المدينة', fontsize=14, fontweight='bold')
+            plt.tight_layout()
+            st.pyplot(fig)
     
     with col2:
         # توزيع القيم
         if cost_col in df.columns:
-            fig2 = px.histogram(
-                df, 
-                x=cost_col,
-                title="توزيع قيم الأصول",
-                nbins=20
-            )
-            fig2.update_layout(showlegend=False)
-            st.plotly_chart(fig2, use_container_width=True)
+            fig, ax = plt.subplots(figsize=(10, 6))
+            df[cost_col].hist(bins=20, ax=ax, color='skyblue', alpha=0.7, edgecolor='black')
+            ax.set_title('توزيع قيم الأصول', fontsize=14, fontweight='bold')
+            ax.set_xlabel('التكلفة (ريال)')
+            ax.set_ylabel('عدد الأصول')
+            ax.grid(True, alpha=0.3)
+            plt.tight_layout()
+            st.pyplot(fig)
     
     # تحليل القيمة المتبقية
     st.markdown("---")
@@ -335,19 +328,27 @@ def create_dashboard(df):
         
         with col1:
             # توزيع القيمة المتبقية
-            fig3 = px.histogram(
-                df_analysis,
-                x='Remaining Value %',
-                title="توزيع نسبة القيمة المتبقية",
-                nbins=20
-            )
-            st.plotly_chart(fig3, use_container_width=True)
+            fig, ax = plt.subplots(figsize=(10, 6))
+            df_analysis['Remaining Value %'].hist(bins=20, ax=ax, color='lightgreen', alpha=0.7, edgecolor='black')
+            ax.set_title('توزيع نسبة القيمة المتبقية', fontsize=14, fontweight='bold')
+            ax.set_xlabel('نسبة القيمة المتبقية (%)')
+            ax.set_ylabel('عدد الأصول')
+            ax.grid(True, alpha=0.3)
+            plt.tight_layout()
+            st.pyplot(fig)
         
         with col2:
             # أعلى 10 أصول قيمة
             top_assets = df_analysis.nlargest(10, cost_col)[[unique_asset_col, cost_col, nbv_col, 'Remaining Value %']]
+            
+            # تنسيق الأرقام للعرض
+            display_df = top_assets.copy()
+            display_df[cost_col] = display_df[cost_col].apply(lambda x: f"{x:,.0f}")
+            display_df[nbv_col] = display_df[nbv_col].apply(lambda x: f"{x:,.0f}")
+            display_df['Remaining Value %'] = display_df['Remaining Value %'].apply(lambda x: f"{x}%")
+            
             st.dataframe(
-                top_assets,
+                display_df,
                 use_container_width=True,
                 height=400
             )
@@ -396,25 +397,27 @@ def depreciation_analysis(df):
     
     with col1:
         # توزيع معدلات الاستهلاك
-        fig1, ax1 = plt.subplots(figsize=(10, 6))
-        df_analysis['Depreciation Rate %'].hist(bins=20, ax=ax1, color='skyblue', alpha=0.7)
-        ax1.set_title('توزيع معدلات الاستهلاك')
-        ax1.set_xlabel('معدل الاستهلاك %')
-        ax1.set_ylabel('عدد الأصول')
-        ax1.grid(True, alpha=0.3)
-        st.pyplot(fig1)
+        fig, ax = plt.subplots(figsize=(10, 6))
+        df_analysis['Depreciation Rate %'].hist(bins=20, ax=ax, color='skyblue', alpha=0.7, edgecolor='black')
+        ax.set_title('توزيع معدلات الاستهلاك', fontsize=14, fontweight='bold')
+        ax.set_xlabel('معدل الاستهلاك (%)')
+        ax.set_ylabel('عدد الأصول')
+        ax.grid(True, alpha=0.3)
+        plt.tight_layout()
+        st.pyplot(fig)
     
     with col2:
         # العلاقة بين التكلفة ومعدل الاستهلاك
-        fig2, ax2 = plt.subplots(figsize=(10, 6))
-        scatter = ax2.scatter(df_analysis[cost_col], df_analysis['Depreciation Rate %'], 
-                             alpha=0.6, c=df_analysis['Depreciation Rate %'], cmap='viridis')
-        ax2.set_title('العلاقة بين التكلفة ومعدل الاستهلاك')
-        ax2.set_xlabel('التكلفة')
-        ax2.set_ylabel('معدل الاستهلاك %')
-        ax2.grid(True, alpha=0.3)
-        plt.colorbar(scatter, ax=ax2)
-        st.pyplot(fig2)
+        fig, ax = plt.subplots(figsize=(10, 6))
+        scatter = ax.scatter(df_analysis[cost_col], df_analysis['Depreciation Rate %'], 
+                           alpha=0.6, c=df_analysis['Depreciation Rate %'], cmap='viridis')
+        ax.set_title('العلاقة بين التكلفة ومعدل الاستهلاك', fontsize=14, fontweight='bold')
+        ax.set_xlabel('التكلفة (ريال)')
+        ax.set_ylabel('معدل الاستهلاك (%)')
+        ax.grid(True, alpha=0.3)
+        plt.colorbar(scatter, ax=ax)
+        plt.tight_layout()
+        st.pyplot(fig)
     
     # تحليل القيمة المتبقية
     st.markdown("---")
@@ -424,13 +427,14 @@ def depreciation_analysis(df):
     
     with col1:
         # توزيع القيمة المتبقية
-        fig3, ax3 = plt.subplots(figsize=(10, 6))
-        df_analysis['Remaining Value %'].hist(bins=20, ax=ax3, color='lightgreen', alpha=0.7)
-        ax3.set_title('توزيع نسبة القيمة المتبقية')
-        ax3.set_xlabel('نسبة القيمة المتبقية %')
-        ax3.set_ylabel('عدد الأصول')
-        ax3.grid(True, alpha=0.3)
-        st.pyplot(fig3)
+        fig, ax = plt.subplots(figsize=(10, 6))
+        df_analysis['Remaining Value %'].hist(bins=20, ax=ax, color='lightgreen', alpha=0.7, edgecolor='black')
+        ax.set_title('توزيع نسبة القيمة المتبقية', fontsize=14, fontweight='bold')
+        ax.set_xlabel('نسبة القيمة المتبقية (%)')
+        ax.set_ylabel('عدد الأصول')
+        ax.grid(True, alpha=0.3)
+        plt.tight_layout()
+        st.pyplot(fig)
     
     with col2:
         # تصنيف الأصول حسب القيمة المتبقية
@@ -439,13 +443,21 @@ def depreciation_analysis(df):
                                 labels=['منخفضة جداً', 'منخفضة', 'متوسطة', 'عالية'])
         category_counts = value_categories.value_counts()
         
-        fig4, ax4 = plt.subplots(figsize=(10, 6))
-        category_counts.plot(kind='bar', ax=ax4, color=['#ff6b6b', '#ffa726', '#66bb6a', '#42a5f5'])
-        ax4.set_title('تصنيف الأصول حسب القيمة المتبقية')
-        ax4.set_xlabel('فئة القيمة')
-        ax4.set_ylabel('عدد الأصول')
-        ax4.tick_params(axis='x', rotation=45)
-        st.pyplot(fig4)
+        fig, ax = plt.subplots(figsize=(10, 6))
+        colors = ['#ff6b6b', '#ffa726', '#66bb6a', '#42a5f5']
+        bars = ax.bar(category_counts.index, category_counts.values, color=colors)
+        
+        # إضافة القيم على الأعمدة
+        for bar, value in zip(bars, category_counts.values):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.1, 
+                   str(value), ha='center', va='bottom', fontweight='bold')
+        
+        ax.set_title('تصنيف الأصول حسب القيمة المتبقية', fontsize=14, fontweight='bold')
+        ax.set_xlabel('فئة القيمة')
+        ax.set_ylabel('عدد الأصول')
+        ax.tick_params(axis='x', rotation=45)
+        plt.tight_layout()
+        st.pyplot(fig)
     
     # تقرير الأصول عالية الاستهلاك
     st.markdown("---")
@@ -456,10 +468,28 @@ def depreciation_analysis(df):
         display_cols = [unique_asset_col, tag_col, desc_col, cost_col, nbv_col, 'Depreciation Rate %']
         available_cols = [col for col in display_cols if col in high_depreciation_df.columns]
         
+        # تنسيق البيانات للعرض
+        display_df = high_depreciation_df[available_cols].copy()
+        if cost_col in display_df.columns:
+            display_df[cost_col] = display_df[cost_col].apply(lambda x: f"{x:,.0f}")
+        if nbv_col in display_df.columns:
+            display_df[nbv_col] = display_df[nbv_col].apply(lambda x: f"{x:,.0f}")
+        if 'Depreciation Rate %' in display_df.columns:
+            display_df['Depreciation Rate %'] = display_df['Depreciation Rate %'].apply(lambda x: f"{x}%")
+        
         st.dataframe(
-            high_depreciation_df[available_cols],
+            display_df,
             use_container_width=True,
             height=300
+        )
+        
+        # خيار تحميل التقرير
+        csv = high_depreciation_df[available_cols].to_csv(index=False, encoding='utf-8-sig')
+        st.download_button(
+            "📥 تحميل تقرير الأصول عالية الاستهلاك",
+            data=csv,
+            file_name="الاصول_عالية_الاستهلاك.csv",
+            mime="text/csv"
         )
     else:
         st.success("🎉 لا توجد أصول عالية الاستهلاك")
@@ -525,8 +555,8 @@ elif display_mode == "التحليل المالي":
     depreciation_analysis(df_filtered)
 
 elif display_mode == "البطاقات التفصيلية":
-    # ... (كود البطاقات التفصيلية السابق)
     st.info("👆 استخدم البحث أعلاه للعثور على الأصول المطلوبة")
+    st.info("🚀 انتقل إلى وضع 'جميع الوظائف' للحصول على تجربة كاملة")
 
 else:  # جميع الوظائف
     create_dashboard(df_filtered)
