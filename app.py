@@ -7,7 +7,7 @@ from utils_prepare import prepare_dataframe, guess_columns, parse_coordinates
 
 # إعداد الصفحة
 st.set_page_config(
-    page_title="نظام إدارة الأصول - تقارير جدولية",
+    page_title="نظام إدارة الأصول - التصنيفات المتعددة",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -75,6 +75,16 @@ st.markdown("""
         padding: 15px;
         border-radius: 10px;
         margin: 5px 0;
+        text-align: center;
+    }
+    .category-card {
+        background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        color: white;
+        padding: 20px;
+        border-radius: 15px;
+        margin: 10px 0;
+        text-align: center;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }
     .summary-box {
         background-color: #f8f9fa;
@@ -82,6 +92,22 @@ st.markdown("""
         padding: 15px;
         margin: 10px 0;
         border-radius: 5px;
+    }
+    .category-level-1 { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+    .category-level-2 { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+    .category-level-3 { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
+    .total-card { background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%); color: #333; }
+    .progress-bar {
+        height: 8px;
+        background-color: #e9ecef;
+        border-radius: 4px;
+        margin: 5px 0;
+        overflow: hidden;
+    }
+    .progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #11998e, #38ef7d);
+        border-radius: 4px;
     }
     @media print {
         .no-print {
@@ -97,7 +123,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<h1 class="main-header">نظام إدارة الأصول - تقارير جدولية قابلة للطباعة</h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="main-header">نظام إدارة الأصول - التصنيفات المتعددة والإحصائيات</h1>', unsafe_allow_html=True)
 
 # الشريط الجانبي
 with st.sidebar:
@@ -109,15 +135,17 @@ with st.sidebar:
     )
     
     st.markdown("---")
-    st.header("🎨 خيارات التنسيق")
-    table_style = st.selectbox(
-        "نمط الجدول",
-        ["نمط افتراضي", "نمط مدمج", "نمط متعدد الألوان", "نمط للطباعة"]
-    )
+    st.header("🎨 خيارات التصنيف")
     
-    show_images = st.checkbox("إظهار الأيقونات", value=True)
+    # إعدادات التصنيفات
+    enable_categories = st.checkbox("تفعيل نظام التصنيفات المتعددة", value=True)
+    
+    if enable_categories:
+        st.subheader("إعدادات التصنيفات")
+        category_levels = st.slider("عدد مستويات التصنيف", 1, 3, 2)
+        
     st.markdown("---")
-    st.caption("الإصدار: 2.1 - جداول قابلة للطباعة")
+    st.caption("الإصدار: 3.0 - التصنيفات المتعددة")
 
 # معالجة حالة عدم رفع ملف
 if uploaded_file is None:
@@ -163,8 +191,255 @@ if df is None:
 # تعيين الأعمدة
 colmap = guess_columns(df.columns)
 
-# قسم البحث والتصفية
-st.subheader("🔍 البحث والتصفية")
+# قسم نظام التصنيفات المتعددة
+if enable_categories:
+    st.markdown("---")
+    st.subheader("🏷️ نظام التصنيفات المتعددة للأصول")
+    
+    # تحديد أعمدة التصنيف
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        category_col_1 = st.selectbox(
+            "التصنيف الأول (مستوى رئيسي)",
+            options=["(غير محدد)"] + list(df.columns),
+            index=0,
+            key="cat1"
+        )
+    
+    with col2:
+        category_col_2 = st.selectbox(
+            "التصنيف الثاني (مستوى فرعي)",
+            options=["(غير محدد)"] + list(df.columns),
+            index=0,
+            key="cat2"
+        ) if category_levels >= 2 else None
+    
+    with col3:
+        category_col_3 = st.selectbox(
+            "التصنيف الثالث (مستوى تفصيلي)",
+            options=["(غير محدد)"] + list(df.columns),
+            index=0,
+            key="cat3"
+        ) if category_levels >= 3 else None
+    
+    # تحليل التصنيفات وعرض الإحصائيات
+    if category_col_1 != "(غير محدد)":
+        st.markdown("---")
+        st.subheader("📊 إحصائيات التصنيفات")
+        
+        # حساب الإحصائيات بناءً على مستويات التصنيف
+        cost_col = colmap.get("Cost")
+        nbv_col = colmap.get("Net Book Value")
+        
+        def calculate_category_stats(df, level1_col, level2_col=None, level3_col=None):
+            """حساب إحصائيات التصنيفات"""
+            stats = []
+            
+            if level2_col and level2_col != "(غير محدد)":
+                # تحليل بمستويين
+                grouped = df.groupby([level1_col, level2_col])
+                for (cat1, cat2), group in grouped:
+                    total_assets = len(group)
+                    total_cost = group[cost_col].sum() if cost_col and cost_col in group.columns else 0
+                    total_nbv = group[nbv_col].sum() if nbv_col and nbv_col in group.columns else 0
+                    
+                    stats.append({
+                        'level1': cat1,
+                        'level2': cat2,
+                        'level3': '',
+                        'total_assets': total_assets,
+                        'total_cost': total_cost,
+                        'total_nbv': total_nbv
+                    })
+            else:
+                # تحليل بمستوى واحد
+                grouped = df.groupby(level1_col)
+                for cat1, group in grouped:
+                    total_assets = len(group)
+                    total_cost = group[cost_col].sum() if cost_col and cost_col in group.columns else 0
+                    total_nbv = group[nbv_col].sum() if nbv_col and nbv_col in group.columns else 0
+                    
+                    stats.append({
+                        'level1': cat1,
+                        'level2': '',
+                        'level3': '',
+                        'total_assets': total_assets,
+                        'total_cost': total_cost,
+                        'total_nbv': total_nbv
+                    })
+            
+            return pd.DataFrame(stats)
+        
+        # حساب الإحصائيات
+        category_stats = calculate_category_stats(
+            df, 
+            category_col_1, 
+            category_col_2 if category_levels >= 2 else None,
+            category_col_3 if category_levels >= 3 else None
+        )
+        
+        # عرض الإحصائيات في بطاقات
+        if not category_stats.empty:
+            # إجماليات عامة
+            total_all_assets = len(df)
+            total_all_cost = df[cost_col].sum() if cost_col and cost_col in df.columns else 0
+            total_all_nbv = df[nbv_col].sum() if nbv_col and nbv_col in df.columns else 0
+            
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.markdown(f"""
+                <div class="total-card">
+                    <h3 style="margin:0; font-size: 14px;">إجمالي الأصول</h3>
+                    <p style="margin:0; font-size: 24px; font-weight: bold;">{total_all_assets:,}</p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col2:
+                st.markdown(f"""
+                <div class="total-card">
+                    <h3 style="margin:0; font-size: 14px;">إجمالي التكلفة</h3>
+                    <p style="margin:0; font-size: 20px; font-weight: bold;">{total_all_cost:,.2f}</p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col3:
+                st.markdown(f"""
+                <div class="total-card">
+                    <h3 style="margin:0; font-size: 14px;">صافي القيمة الدفترية</h3>
+                    <p style="margin:0; font-size: 20px; font-weight: bold;">{total_all_nbv:,.2f}</p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col4:
+                unique_categories = category_stats['level1'].nunique()
+                st.markdown(f"""
+                <div class="total-card">
+                    <h3 style="margin:0; font-size: 14px;">عدد التصنيفات</h3>
+                    <p style="margin:0; font-size: 24px; font-weight: bold;">{unique_categories}</p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            st.markdown("---")
+            st.subheader("📈 تفصيل التصنيفات")
+            
+            # عرض التصنيفات في أقسام منظمة
+            unique_level1 = category_stats['level1'].unique()
+            
+            for i, level1_cat in enumerate(unique_level1):
+                level1_data = category_stats[category_stats['level1'] == level1_cat]
+                level1_assets = level1_data['total_assets'].sum()
+                level1_cost = level1_data['total_cost'].sum()
+                level1_nbv = level1_data['total_nbv'].sum()
+                
+                # حساب النسب المئوية
+                assets_percentage = (level1_assets / total_all_assets) * 100
+                cost_percentage = (level1_cost / total_all_cost) * 100 if total_all_cost > 0 else 0
+                
+                col1, col2 = st.columns([1, 3])
+                
+                with col1:
+                    st.markdown(f"""
+                    <div class="category-level-1" style="padding: 15px; border-radius: 10px; color: white; text-align: center;">
+                        <h3 style="margin:0; font-size: 16px;">{level1_cat}</h3>
+                        <p style="margin:5px 0; font-size: 24px; font-weight: bold;">{level1_assets:,}</p>
+                        <p style="margin:0; font-size: 12px;">أصل</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col2:
+                    st.write(f"**التكلفة الإجمالية:** {level1_cost:,.2f}")
+                    st.write(f"**صافي القيمة الدفترية:** {level1_nbv:,.2f}")
+                    
+                    # أشرطة التقدم
+                    st.write("**نسبة عدد الأصول:**")
+                    st.markdown(f"""
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: {assets_percentage}%"></div>
+                    </div>
+                    <div style="text-align: left; font-size: 12px; color: #666;">
+                        {assets_percentage:.1f}% من إجمالي الأصول
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    st.write("**نسبة التكلفة:**")
+                    st.markdown(f"""
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: {cost_percentage}%"></div>
+                    </div>
+                    <div style="text-align: left; font-size: 12px; color: #666;">
+                        {cost_percentage:.1f}% من إجمالي التكلفة
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                st.markdown("---")
+        
+        # تصفية البيانات حسب التصنيف
+        st.subheader("🔍 تصفية البيانات حسب التصنيف")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            selected_cat1 = st.selectbox(
+                "اختر التصنيف الأول",
+                options=["الكل"] + list(df[category_col_1].dropna().unique()),
+                key="filter_cat1"
+            )
+        
+        with col2:
+            if category_col_2 and category_col_2 != "(غير محدد)":
+                available_cat2 = ["الكل"]
+                if selected_cat1 != "الكل":
+                    available_cat2.extend(list(df[df[category_col_1] == selected_cat1][category_col_2].dropna().unique()))
+                
+                selected_cat2 = st.selectbox(
+                    "اختر التصنيف الثاني",
+                    options=available_cat2,
+                    key="filter_cat2"
+                )
+            else:
+                selected_cat2 = "الكل"
+        
+        with col3:
+            if category_col_3 and category_col_3 != "(غير محدد)" and selected_cat2 != "الكل":
+                available_cat3 = ["الكل"]
+                if selected_cat1 != "الكل" and selected_cat2 != "الكل":
+                    filtered_df = df[df[category_col_1] == selected_cat1]
+                    filtered_df = filtered_df[filtered_df[category_col_2] == selected_cat2]
+                    available_cat3.extend(list(filtered_df[category_col_3].dropna().unique()))
+                
+                selected_cat3 = st.selectbox(
+                    "اختر التصنيف الثالث",
+                    options=available_cat3,
+                    key="filter_cat3"
+                )
+            else:
+                selected_cat3 = "الكل"
+        
+        # تطبيق التصفية
+        df_filtered = df.copy()
+        
+        if selected_cat1 != "الكل":
+            df_filtered = df_filtered[df_filtered[category_col_1] == selected_cat1]
+        
+        if selected_cat2 != "الكل" and category_col_2 and category_col_2 != "(غير محدد)":
+            df_filtered = df_filtered[df_filtered[category_col_2] == selected_cat2]
+        
+        if selected_cat3 != "الكل" and category_col_3 and category_col_3 != "(غير محدد)":
+            df_filtered = df_filtered[df_filtered[category_col_3] == selected_cat3]
+        
+        st.success(f"تم العثور على {len(df_filtered):,} أصل في التصنيف المحدد")
+        
+    else:
+        st.warning("⚠️ الرجاء تحديد عمود التصنيف الأول على الأقل")
+        df_filtered = df.copy()
+else:
+    df_filtered = df.copy()
+
+# قسم البحث والتصفية الإضافية
+st.markdown("---")
+st.subheader("🔍 البحث والتصفية المتقدمة")
 
 col1, col2, col3 = st.columns([2, 1, 1])
 with col1:
@@ -178,9 +453,7 @@ if city_col and city_col in df.columns:
 with col2:
     selected_city = st.selectbox("المدينة", ["الكل"] + cities) if cities else "الكل"
 
-# تطبيق الفلاتر
-df_filtered = df.copy()
-
+# تطبيق فلاتر البحث
 if search_query.strip():
     def search_function(row):
         search_fields = [
@@ -197,7 +470,7 @@ if selected_city != "الكل" and city_col and city_col in df_filtered.columns:
     df_filtered = df_filtered[df_filtered[city_col].astype(str) == selected_city]
 
 # عرض النتائج في جدول منسق
-st.subheader(f"📊 السجلات المطابقة ({len(df_filtered):,} سجل)")
+st.subheader(f"📋 السجلات المطابقة ({len(df_filtered):,} سجل)")
 
 if len(df_filtered) == 0:
     st.warning("⚠️ لم يتم العثور على سجلات تطابق معايير البحث.")
@@ -212,6 +485,13 @@ else:
             col_name = colmap.get(col_key)
             if col_name and col_name in dataframe.columns:
                 important_columns.append(col_name)
+        
+        # إضافة أعمدة التصنيف إذا كانت محددة
+        if enable_categories and category_col_1 != "(غير محدد)":
+            important_columns.insert(0, category_col_1)
+        
+        if enable_categories and category_col_2 and category_col_2 != "(غير محدد)":
+            important_columns.insert(1, category_col_2)
         
         # إذا كانت الأعمدة المهمة أقل من 4، أضف أعمدة إضافية
         if len(important_columns) < 4:
@@ -255,6 +535,10 @@ else:
                     cell_class = "class='important-field'"
                 elif col == colmap.get("City") or col == colmap.get("Building"):
                     cell_class = "class='location-field'"
+                elif col == category_col_1:
+                    cell_class = "class='category-level-1'"
+                elif col == category_col_2:
+                    cell_class = "class='category-level-2'"
                 
                 html += f"<td {cell_class}>{value}</td>"
             
@@ -270,7 +554,7 @@ else:
     col1, col2, col3 = st.columns([1, 1, 1])
     
     with col1:
-        if st.button("🖨️ طباعة الجدول", use_container_width=True):
+        if st.button("🖨️ طباعة التقرير", use_container_width=True):
             st.markdown("""
             <script>
             window.print();
@@ -319,186 +603,12 @@ else:
             use_container_width=True
         )
 
-# قسم التفاصيل المفصلة للأصل المحدد
-st.markdown("---")
-st.subheader("📄 تقرير مفصل لأصل محدد")
-
-id_col = colmap.get("Asset Unique No")
-if not id_col or id_col not in df.columns:
-    st.error("⚠️ لم يتم تعيين عمود 'رقم الأصل الفريد' بشكل صحيح.")
-    st.stop()
-
-asset_ids = df_filtered[id_col].dropna().astype(str).unique().tolist()
-
-if asset_ids:
-    selected_asset_id = st.selectbox("اختر رقم الأصل", [""] + asset_ids)
-    
-    if selected_asset_id:
-        asset_data = df[df[id_col].astype(str) == str(selected_asset_id)]
-        
-        if not asset_data.empty:
-            record = asset_data.iloc[0].to_dict()
-            
-            # إنشاء تقرير مفصل منسق
-            def create_detailed_report(record_data, column_mapping):
-                """إنشاء تقرير مفصل منسق للطباعة"""
-                
-                report_html = """
-                <div style="font-family: Arial, sans-serif; max-width: 1000px; margin: 0 auto; padding: 20px; border: 2px solid #1f77b4; border-radius: 10px;">
-                    <div style="text-align: center; background: linear-gradient(135deg, #1f77b4, #2E86AB); color: white; padding: 20px; border-radius: 8px 8px 0 0;">
-                        <h1 style="margin: 0; font-size: 28px;">تقرير مفصل عن الأصل</h1>
-                        <h2 style="margin: 10px 0 0 0; font-size: 22px;">نظام إدارة الأصول</h2>
-                    </div>
-                """
-                
-                # معلومات التعريف
-                report_html += """
-                <div style="margin: 20px 0;">
-                    <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
-                """
-                
-                sections = [
-                    {
-                        "title": "🆔 بيانات التعريف الأساسية",
-                        "fields": ["Entity Name", "Entity Code", "Asset Unique No", "Tag Number", "Accounting Group Desc", "Accounting Group Code"]
-                    },
-                    {
-                        "title": "⚙️ المواصفات الفنية",
-                        "fields": ["Description", "Manufacturer", "Unit of Measure", "Quantity"]
-                    },
-                    {
-                        "title": "💰 المعلومات المالية",
-                        "fields": ["Cost", "Depreciation Expense", "Accumulated Depreciation", "Residual Value", "Net Book Value"]
-                    },
-                    {
-                        "title": "📍 بيانات الموقع",
-                        "fields": ["Country", "Region", "City", "Building", "Floor", "Room/Office", "Coordinates"]
-                    }
-                ]
-                
-                for section in sections:
-                    report_html += f"""
-                    <tr>
-                        <td colspan="2" style="background-color: #A23B72; color: white; padding: 12px; font-weight: bold; font-size: 16px; text-align: center;">
-                            {section['title']}
-                        </td>
-                    </tr>
-                    """
-                    
-                    for field in section['fields']:
-                        col_name = column_mapping.get(field)
-                        if col_name and col_name in record_data:
-                            value = record_data[col_name]
-                            if pd.notna(value):
-                                # تنسيق القيم المالية
-                                if field in ["Cost", "Depreciation Expense", "Accumulated Depreciation", "Residual Value", "Net Book Value"]:
-                                    try:
-                                        value = f"{float(value):,.2f}"
-                                    except:
-                                        pass
-                                
-                                report_html += f"""
-                                <tr>
-                                    <td style="background-color: #f8f9fa; padding: 10px; border: 1px solid #ddd; font-weight: bold; width: 30%;">
-                                        {field}
-                                    </td>
-                                    <td style="padding: 10px; border: 1px solid #ddd; width: 70%;">
-                                        {value}
-                                    </td>
-                                </tr>
-                                """
-                
-                report_html += """
-                    </table>
-                </div>
-                <div style="text-align: center; margin-top: 30px; padding: 15px; background-color: #f8f9fa; border-radius: 0 0 8px 8px;">
-                    <p style="margin: 0; color: #666;">تم إنشاء هذا التقرير تلقائيًا من نظام إدارة الأصول</p>
-                </div>
-                </div>
-                """
-                
-                return report_html
-            
-            # عرض التقرير المفصل
-            detailed_report = create_detailed_report(record, colmap)
-            st.markdown(detailed_report, unsafe_allow_html=True)
-            
-            # أزرار تحميل التقرير
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                if st.button("🖨️ طباعة التقرير المفصل", use_container_width=True):
-                    st.markdown("""
-                    <script>
-                    window.print();
-                    </script>
-                    """, unsafe_allow_html=True)
-            
-            with col2:
-                st.download_button(
-                    "📥 تحميل التقرير كـ HTML",
-                    data=detailed_report,
-                    file_name=f"تقرير_الأصل_{selected_asset_id}.html",
-                    mime="text/html",
-                    use_container_width=True
-                )
-
-# ملخص إحصائي
-st.markdown("---")
-st.subheader("📈 ملخص إحصائي")
-
-if len(df_filtered) > 0:
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        total_assets = len(df_filtered)
-        st.markdown(f"""
-        <div class="metric-card">
-            <h3 style="margin:0; font-size: 14px;">إجمالي الأصول</h3>
-            <p style="margin:0; font-size: 24px; font-weight: bold;">{total_assets:,}</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        cost_col = colmap.get("Cost")
-        total_cost = 0
-        if cost_col and cost_col in df_filtered.columns:
-            total_cost = df_filtered[cost_col].sum()
-        st.markdown(f"""
-        <div class="metric-card">
-            <h3 style="margin:0; font-size: 14px;">إجمالي التكلفة</h3>
-            <p style="margin:0; font-size: 20px; font-weight: bold;">{total_cost:,.2f}</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col3:
-        nbv_col = colmap.get("Net Book Value")
-        total_nbv = 0
-        if nbv_col and nbv_col in df_filtered.columns:
-            total_nbv = df_filtered[nbv_col].sum()
-        st.markdown(f"""
-        <div class="metric-card">
-            <h3 style="margin:0; font-size: 14px;">صافي القيمة الدفترية</h3>
-            <p style="margin:0; font-size: 20px; font-weight: bold;">{total_nbv:,.2f}</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col4:
-        if city_col and city_col in df_filtered.columns:
-            cities_count = df_filtered[city_col].nunique()
-            st.markdown(f"""
-            <div class="metric-card">
-                <h3 style="margin:0; font-size: 14px;">عدد المدن</h3>
-                <p style="margin:0; font-size: 24px; font-weight: bold;">{cities_count}</p>
-            </div>
-            """, unsafe_allow_html=True)
-
 # تذييل الصفحة
 st.markdown("---")
 st.markdown(
     '<div style="text-align: center; padding: 20px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; border-radius: 10px;">'
-    '<h3 style="margin:0;">✅ الإصدار المحسّن - جداول قابلة للطباعة</h3>'
-    '<p style="margin:5px 0 0 0;">تم التصميم خصيصًا للعرض والطباعة بشكل أنيق ومهني</p>'
+    '<h3 style="margin:0;">✅ الإصدار 3.0 - نظام التصنيفات المتعددة</h3>'
+    '<p style="margin:5px 0 0 0;">تحليل إحصائي متقدم وتصنيفات متعددة المستويات</p>'
     '</div>', 
     unsafe_allow_html=True
 )
