@@ -3,7 +3,8 @@ import io
 import pandas as pd
 import streamlit as st
 from utils_pdf import make_asset_pdf
-from utils_prepare import prepare_dataframe, guess_columns
+from utils_prepare import prepare_dataframe, guess_columns, parse_coordinates
+import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="إدارة وعرض سجلات الأصول - PoC", layout="wide")
 
@@ -68,7 +69,17 @@ if city != "الكل" and city_col and city_col in df_view.columns:
     df_view = df_view[df_view[city_col] == city]
 
 st.caption(f"عدد السجلات المطابقة: {len(df_view):,}")
-st.dataframe(df_view.head(200))
+st.dataframe(df_view.head(200))\n
+# Export filtered results to Excel
+excel_buf = io.BytesIO()
+try:
+    df_view.to_excel(excel_buf, index=False, engine="xlsxwriter")
+except Exception:
+    excel_buf = io.BytesIO()
+    df_view.to_excel(excel_buf, index=False)
+excel_buf.seek(0)
+st.download_button("تحميل النتائج المفلترة (Excel)", data=excel_buf, file_name="filtered_assets.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
 
 st.markdown("---")
 st.subheader("تفاصيل أصل محدد")
@@ -114,7 +125,22 @@ with right:
     for k in ["Country","Region","City","Building","Floor","Room/Office","Coordinates"]:
         colname = colmap.get(k)
         if colname and colname in record and pd.notna(record[colname]):
-            st.write(f"**{k}**: {record[colname]}")
+            st.write(f"**{k}**: {record[colname]}")\n
+    # Mini static "map" using matplotlib (no internet tiles). If coordinates exist, plot a point.
+    coords_col = colmap.get("Coordinates")
+    if coords_col and coords_col in record and isinstance(record[coords_col], (str, int, float)):
+        lat, lon = parse_coordinates(record[coords_col])
+        if lat is not None and lon is not None:
+            fig = plt.figure(figsize=(3.5, 3))
+            ax = plt.gca()
+            ax.scatter([lon], [lat], s=50)
+            ax.set_xlabel("Longitude")
+            ax.set_ylabel("Latitude")
+            ax.set_title("موقع تقريبي (إسقاط بسيط)")
+            ax.set_xlim(lon - 0.02, lon + 0.02)
+            ax.set_ylim(lat - 0.02, lat + 0.02)
+            st.pyplot(fig)
+    
 
 st.markdown("---")
 st.write("### طباعة ورقة تفصيلية (PDF)")

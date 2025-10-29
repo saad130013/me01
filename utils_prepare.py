@@ -41,22 +41,21 @@ def prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     cols = [c for c in df.columns if not (str(c).startswith("Unnamed") or str(c).strip()=="")]
     df = df[cols].copy()
     df.columns = [normalize_colname(c) for c in df.columns]
-    # Try to parse dates and numbers for known keys later inside the app as needed
     return df
 
 def guess_columns(columns):
     # Try to map internal keys to real columns by fuzzy name match
     colmap = {}
-    colset = {normalize_colname(c): c for c in columns}
     for key, variants in COMMON_HEADERS.items():
         chosen = None
-        # exact Arabic/English matches
+        # exact match
         for v in variants:
             for c in columns:
                 if normalize_colname(c) == normalize_colname(v):
                     chosen = c
                     break
-            if chosen: break
+            if chosen:
+                break
         # contains match
         if not chosen:
             for v in variants:
@@ -64,6 +63,25 @@ def guess_columns(columns):
                     if normalize_colname(v) in normalize_colname(c):
                         chosen = c
                         break
-                if chosen: break
+                if chosen:
+                    break
         colmap[key] = chosen if chosen in columns else None
     return colmap
+
+def parse_coordinates(text):
+    """Parse 'lat,lon' into floats. Returns (lat, lon) or (None, None)."""
+    if text is None:
+        return (None, None)
+    s = str(text).strip()
+    s = s.replace("،", ",")  # Arabic comma
+    parts = [p.strip() for p in s.split(",")]
+    if len(parts) != 2:
+        return (None, None)
+    try:
+        lat = float(parts[0])
+        lon = float(parts[1])
+        if abs(lat) > 90 or abs(lon) > 180:
+            return (None, None)
+        return (lat, lon)
+    except Exception:
+        return (None, None)
