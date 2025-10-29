@@ -75,6 +75,14 @@ st.markdown("""
         font-weight: bold;
         text-align: center;
     }
+    .building-value {
+        background: linear-gradient(135deg, #11998e, #38ef7d);
+        color: white;
+        padding: 8px 12px;
+        border-radius: 8px;
+        font-weight: bold;
+        text-align: center;
+    }
     .section-title {
         background: linear-gradient(135deg, #A23B72, #C73E1D);
         color: white;
@@ -104,8 +112,24 @@ st.markdown("""
         border-radius: 15px;
         margin-bottom: 20px;
     }
+    .location-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 10px;
+        margin: 10px 0;
+    }
+    .location-item {
+        background: linear-gradient(135deg, #3F7CAC, #5BA8D8);
+        color: white;
+        padding: 12px;
+        border-radius: 8px;
+        text-align: center;
+    }
     @media (max-width: 768px) {
         .quick-stats {
+            grid-template-columns: 1fr;
+        }
+        .location-grid {
             grid-template-columns: 1fr;
         }
     }
@@ -131,7 +155,7 @@ with st.sidebar:
     )
     
     st.markdown("---")
-    st.caption("الإصدار: 4.0 - بطاقات معلومات منظمة")
+    st.caption("الإصدار: 4.1 - بطاقات معلومات الموقع التفصيلية")
 
 # معالجة حالة عدم رفع ملف
 if uploaded_file is None:
@@ -196,7 +220,11 @@ desc_col = colmap.get("Description") or "Asset Description"
 cost_col = colmap.get("Cost") or "Cost"
 nbv_col = colmap.get("Net Book Value") or "Net Book Value"
 city_col = colmap.get("City") or "City"
+
+# أعمدة الموقع التفصيلية
 building_col = colmap.get("Building") or "Building Numbe"
+floor_col = colmap.get("Floor") or "Floor"
+room_col = colmap.get("Room/Office") or "Room/Office"
 
 with col2:
     if city_col in df.columns:
@@ -364,35 +392,104 @@ def display_asset_card(asset_data):
                 except:
                     st.info(f"صافي القيمة: {asset_data[nbv_col]}")
         
-        # معلومات الموقع
+        # معلومات الموقع التفصيلية
         st.markdown(
             '<div style="background: linear-gradient(135deg, #A23B72, #C73E1D); color: white; padding: 12px; border-radius: 8px; margin: 20px 0 15px 0; font-weight: bold; text-align: center;">'
-            '📍 معلومات الموقع'
+            '📍 معلومات الموقع التفصيلية'
             '</div>',
             unsafe_allow_html=True
         )
         
-        col1, col2 = st.columns(2)
+        # معلومات المدينة
+        if city_col in asset_data and pd.notna(asset_data[city_col]):
+            st.markdown(
+                f'<div style="background: linear-gradient(135deg, #3F7CAC, #5BA8D8); color: white; padding: 15px; border-radius: 10px; text-align: center; margin-bottom: 15px;">'
+                f'<h4 style="margin:0; font-size: 14px;">المدينة</h4>'
+                f'<p style="margin:0; font-size: 18px; font-weight: bold;">{asset_data[city_col]}</p>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
         
-        with col1:
+        # شبكة معلومات المبنى والدور والغرفة
+        st.markdown('<div class="location-grid">', unsafe_allow_html=True)
+        
+        # رقم المبنى
+        if building_col in asset_data and pd.notna(asset_data[building_col]):
+            st.markdown(
+                f'<div class="location-item">'
+                f'<h4 style="margin:0; font-size: 14px;">🏢 رقم المبنى</h4>'
+                f'<p style="margin:0; font-size: 16px; font-weight: bold;">{asset_data[building_col]}</p>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+        else:
+            st.markdown(
+                f'<div class="location-item">'
+                f'<h4 style="margin:0; font-size: 14px;">🏢 رقم المبنى</h4>'
+                f'<p style="margin:0; font-size: 16px; font-weight: bold;">غير محدد</p>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+        
+        # رقم الدور
+        if floor_col in asset_data and pd.notna(asset_data[floor_col]):
+            st.markdown(
+                f'<div class="location-item">'
+                f'<h4 style="margin:0; font-size: 14px;">🏢 رقم الدور</h4>'
+                f'<p style="margin:0; font-size: 16px; font-weight: bold;">{asset_data[floor_col]}</p>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+        else:
+            st.markdown(
+                f'<div class="location-item">'
+                f'<h4 style="margin:0; font-size: 14px;">🏢 رقم الدور</h4>'
+                f'<p style="margin:0; font-size: 16px; font-weight: bold;">غير محدد</p>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+        
+        # رقم الغرفة/المكتب
+        if room_col in asset_data and pd.notna(asset_data[room_col]):
+            st.markdown(
+                f'<div class="location-item">'
+                f'<h4 style="margin:0; font-size: 14px;">🚪 رقم الغرفة/المكتب</h4>'
+                f'<p style="margin:0; font-size: 16px; font-weight: bold;">{asset_data[room_col]}</p>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+        else:
+            st.markdown(
+                f'<div class="location-item">'
+                f'<h4 style="margin:0; font-size: 14px;">🚪 رقم الغرفة/المكتب</h4>'
+                f'<p style="margin:0; font-size: 16px; font-weight: bold;">غير محدد</p>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # عنوان الموقع الكامل
+        location_parts = []
+        if building_col in asset_data and pd.notna(asset_data[building_col]):
+            location_parts.append(f"مبنى {asset_data[building_col]}")
+        if floor_col in asset_data and pd.notna(asset_data[floor_col]):
+            location_parts.append(f"دور {asset_data[floor_col]}")
+        if room_col in asset_data and pd.notna(asset_data[room_col]):
+            location_parts.append(f"غرفة {asset_data[room_col]}")
+        
+        if location_parts:
+            full_location = " - ".join(location_parts)
             if city_col in asset_data and pd.notna(asset_data[city_col]):
-                st.markdown(
-                    f'<div style="background: linear-gradient(135deg, #3F7CAC, #5BA8D8); color: white; padding: 15px; border-radius: 10px; text-align: center;">'
-                    f'<h4 style="margin:0; font-size: 14px;">المدينة</h4>'
-                    f'<p style="margin:0; font-size: 18px; font-weight: bold;">{asset_data[city_col]}</p>'
-                    f'</div>',
-                    unsafe_allow_html=True
-                )
-        
-        with col2:
-            if building_col in asset_data and pd.notna(asset_data[building_col]):
-                st.markdown(
-                    f'<div style="background: linear-gradient(135deg, #3F7CAC, #5BA8D8); color: white; padding: 15px; border-radius: 10px; text-align: center;">'
-                    f'<h4 style="margin:0; font-size: 14px;">رقم المبنى</h4>'
-                    f'<p style="margin:0; font-size: 18px; font-weight: bold;">{asset_data[building_col]}</p>'
-                    f'</div>',
-                    unsafe_allow_html=True
-                )
+                full_location = f"{asset_data[city_col]} - {full_location}"
+            
+            st.markdown(
+                f'<div style="background: linear-gradient(135deg, #11998e, #38ef7d); color: white; padding: 12px; border-radius: 8px; margin: 15px 0; text-align: center;">'
+                f'<h4 style="margin:0; font-size: 14px;">📍 العنوان الكامل</h4>'
+                f'<p style="margin:0; font-size: 16px; font-weight: bold;">{full_location}</p>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
         
         # أزرار التحكم
         st.markdown("---")
@@ -464,7 +561,9 @@ if display_mode in ["جدول تقليدي", "كلا الوضعين"]:
             "Cost": cost_col,
             "Net Book Value": nbv_col,
             "City": city_col,
-            "Building Number": building_col
+            "Building Number": building_col,
+            "Floor": floor_col,
+            "Room/Office": room_col
         }
         
         for display_name, actual_col in column_mapping.items():
@@ -541,8 +640,8 @@ with col2:
 st.markdown("---")
 st.markdown(
     '<div style="text-align: center; padding: 20px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; border-radius: 10px;">'
-    '<h3 style="margin:0;">✅ الإصدار 4.0 - بطاقات المعلومات المنظمة</h3>'
-    '<p style="margin:5px 0 0 0;">عرض مرئي منظم ومهني لمعلومات الأصول</p>'
+    '<h3 style="margin:0;">✅ الإصدار 4.1 - بطاقات معلومات الموقع التفصيلية</h3>'
+    '<p style="margin:5px 0 0 0;">معلومات شاملة عن الموقع: المبنى - الدور - الغرفة</p>'
     '</div>', 
     unsafe_allow_html=True
 )
