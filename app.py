@@ -7,12 +7,12 @@ from utils_prepare import prepare_dataframe, guess_columns, parse_coordinates
 
 # إعداد الصفحة
 st.set_page_config(
-    page_title="نظام إدارة الأصول - النسخة المحسنة",
+    page_title="نظام إدارة الأصول - تقارير جدولية",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# إضافة بعض التنسيقات CSS مخصصة
+# تنسيقات CSS مخصصة للجداول والطباعة
 st.markdown("""
 <style>
     .main-header {
@@ -20,24 +20,84 @@ st.markdown("""
         color: #1f77b4;
         text-align: center;
         margin-bottom: 2rem;
+        border-bottom: 3px solid #1f77b4;
+        padding-bottom: 1rem;
+    }
+    .print-table {
+        border-collapse: collapse;
+        width: 100%;
+        font-family: Arial, sans-serif;
+        font-size: 12px;
+        margin: 10px 0;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .print-table th {
+        background-color: #2E86AB;
+        color: white;
+        padding: 12px 8px;
+        text-align: right;
+        border: 1px solid #1f77b4;
+        font-weight: bold;
+    }
+    .print-table td {
+        padding: 10px 8px;
+        border: 1px solid #ddd;
+        text-align: right;
+    }
+    .print-table tr:nth-child(even) {
+        background-color: #f8f9fa;
+    }
+    .print-table tr:hover {
+        background-color: #e9ecef;
+    }
+    .section-header {
+        background-color: #A23B72 !important;
+        color: white !important;
+        font-size: 14px !important;
+        font-weight: bold !important;
+    }
+    .financial-value {
+        background-color: #F18F01 !important;
+        color: white !important;
+        font-weight: bold !important;
+    }
+    .important-field {
+        background-color: #C73E1D !important;
+        color: white !important;
+    }
+    .location-field {
+        background-color: #3F7CAC !important;
+        color: white !important;
     }
     .metric-card {
-        background-color: #f0f2f6;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        border-left: 4px solid #1f77b4;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 15px;
+        border-radius: 10px;
+        margin: 5px 0;
     }
-    .success-box {
-        background-color: #d4edda;
-        color: #155724;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        border: 1px solid #c3e6cb;
+    .summary-box {
+        background-color: #f8f9fa;
+        border-left: 5px solid #1f77b4;
+        padding: 15px;
+        margin: 10px 0;
+        border-radius: 5px;
+    }
+    @media print {
+        .no-print {
+            display: none !important;
+        }
+        .print-table {
+            box-shadow: none !important;
+        }
+        body {
+            zoom: 85%;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<h1 class="main-header">نظام إدارة وعرض سجلات الأصول - النسخة المحسنة</h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="main-header">نظام إدارة الأصول - تقارير جدولية قابلة للطباعة</h1>', unsafe_allow_html=True)
 
 # الشريط الجانبي
 with st.sidebar:
@@ -49,29 +109,22 @@ with st.sidebar:
     )
     
     st.markdown("---")
-    st.header("⚙️ الإعدادات")
-    st.caption("ملاحظة: سيقوم النظام بقراءة البيانات من الصف الثاني تلقائيًا (header=1).")
+    st.header("🎨 خيارات التنسيق")
+    table_style = st.selectbox(
+        "نمط الجدول",
+        ["نمط افتراضي", "نمط مدمج", "نمط متعدد الألوان", "نمط للطباعة"]
+    )
     
-    # إضافة معلومات إضافية في الشريط الجانبي
+    show_images = st.checkbox("إظهار الأيقونات", value=True)
     st.markdown("---")
-    st.markdown("### 📊 معلومات النظام")
-    st.caption("الإصدار: 2.0 - محسّن")
-    st.caption("تاريخ التحديث: 2024")
+    st.caption("الإصدار: 2.1 - جداول قابلة للطباعة")
 
 # معالجة حالة عدم رفع ملف
 if uploaded_file is None:
     st.info("👆 الرجاء رفع ملف السجل (Excel) لبدء استخدام النظام.")
-    st.markdown("""
-    ### التعليمات السريعة:
-    1. قم برفع ملف Excel يحتوي على بيانات الأصول
-    2. تأكد من أن البيانات تبدأ من الصف الثاني
-    3. استخدم خيارات التصفية للعثور على الأصول المطلوبة
-    4. اختر أصلًا معينًا لعرض تفاصيله الكاملة
-    5. قم بتحميل التقارير بصيغتي Excel أو PDF
-    """)
     st.stop()
 
-# تحميل البيانات مع معالجة الأخطاء المحسنة
+# تحميل البيانات
 @st.cache_data(show_spinner="جاري تحميل البيانات...")
 def load_data(uploaded_file):
     try:
@@ -82,7 +135,6 @@ def load_data(uploaded_file):
         return df_raw
     except Exception as e:
         st.error(f"❌ تعذر قراءة الملف: {str(e)}")
-        st.info("يرجى التأكد من أن الملف بصيغة Excel صحيحة وغير تالف.")
         return None
 
 # تحضير البيانات
@@ -108,325 +160,345 @@ with st.spinner("جاري معالجة البيانات..."):
 if df is None:
     st.stop()
 
-# عرض إحصائيات سريعة
-st.subheader("📈 نظرة عامة على البيانات")
-col1, col2, col3, col4 = st.columns(4)
-with col1:
-    st.metric("إجمالي السجلات", f"{len(df):,}")
-with col2:
-    st.metric("عدد الأعمدة", len(df.columns))
-with col3:
-    non_null_count = df.count().sum()
-    st.metric("إجمالي القيم", f"{non_null_count:,}")
-with col4:
-    completeness = f"{(non_null_count / (len(df) * len(df.columns)) * 100):.1f}%"
-    st.metric("نسبة اكتمال البيانات", completeness)
-
 # تعيين الأعمدة
 colmap = guess_columns(df.columns)
-
-with st.expander("🔧 تعيين/تأكيد أسماء الأعمدة:", expanded=False):
-    st.info("إذا كانت التعيينات التلقائية غير صحيحة، يرجى اختيار الأعمدة المناسبة يدويًا.")
-    
-    columns_mapping = {}
-    for key, current_value in colmap.items():
-        options = ["(غير موجود)"] + list(df.columns)
-        default_index = 0
-        if current_value in df.columns:
-            default_index = list(df.columns).index(current_value) + 1
-        
-        selected_col = st.selectbox(
-            f"{key}", 
-            options=options,
-            index=default_index,
-            key=f"colmap_{key}"  # إضافة مفتاح فريد لكل selectbox
-        )
-        columns_mapping[key] = selected_col if selected_col != "(غير موجود)" else None
-    
-    colmap = columns_mapping
 
 # قسم البحث والتصفية
 st.subheader("🔍 البحث والتصفية")
 
-# شريط البحث
-search_query = st.text_input(
-    "ابحث برقم الأصل/الوسم/الوصف:", 
-    "",
-    placeholder="أدخل كلمة للبحث في أرقام الأصول، الوسوم، والوصف..."
-)
+col1, col2, col3 = st.columns([2, 1, 1])
+with col1:
+    search_query = st.text_input("ابحث برقم الأصل/الوسم/الوصف:", "")
 
-# عوامل التصفية
 city_col = colmap.get("City")
 cities = []
-if city_col and city_col in df.columns and city_col != "(غير موجود)":
+if city_col and city_col in df.columns:
     cities = sorted([c for c in df[city_col].dropna().astype(str).unique().tolist() if c.strip()])
 
-col1, col2, col3 = st.columns([2, 1, 1])
 with col2:
     selected_city = st.selectbox("المدينة", ["الكل"] + cities) if cities else "الكل"
-
-with col3:
-    # إضافة تصفية إضافية بحسب مجموعة المحاسبة
-    accounting_col = colmap.get("Accounting Group Desc")
-    accounting_groups = []
-    if accounting_col and accounting_col in df.columns and accounting_col != "(غير موجود)":
-        accounting_groups = sorted([g for g in df[accounting_col].dropna().astype(str).unique().tolist() if g.strip()])
-    
-    selected_accounting = st.selectbox(
-        "مجموعة المحاسبة", 
-        ["الكل"] + accounting_groups
-    ) if accounting_groups else "الكل"
 
 # تطبيق الفلاتر
 df_filtered = df.copy()
 
-# دالة البحث المحسنة
-def advanced_search(row):
-    if not search_query.strip():
-        return True
-    
-    search_terms = search_query.lower().strip()
-    
-    # البحث في الحقول الرئيسية
-    search_fields = [
-        str(row.get(colmap.get("Asset Unique No"), "")),
-        str(row.get(colmap.get("Tag Number"), "")),
-        str(row.get(colmap.get("Description"), ""))
-    ]
-    
-    content = " ".join(search_fields).lower()
-    return search_terms in content
-
-# تطبيق الفلاتر
 if search_query.strip():
-    df_filtered = df_filtered[df_filtered.apply(advanced_search, axis=1)]
+    def search_function(row):
+        search_fields = [
+            str(row.get(colmap.get("Asset Unique No"), "")),
+            str(row.get(colmap.get("Tag Number"), "")),
+            str(row.get(colmap.get("Description"), ""))
+        ]
+        content = " ".join(search_fields).lower()
+        return search_query.lower() in content
+    
+    df_filtered = df_filtered[df_filtered.apply(search_function, axis=1)]
 
 if selected_city != "الكل" and city_col and city_col in df_filtered.columns:
     df_filtered = df_filtered[df_filtered[city_col].astype(str) == selected_city]
 
-if selected_accounting != "الكل" and accounting_col and accounting_col in df_filtered.columns:
-    df_filtered = df_filtered[df_filtered[accounting_col].astype(str) == selected_accounting]
-
-# عرض النتائج
-st.subheader(f"📋 السجلات المطابقة ({len(df_filtered):,} سجل)")
+# عرض النتائج في جدول منسق
+st.subheader(f"📊 السجلات المطابقة ({len(df_filtered):,} سجل)")
 
 if len(df_filtered) == 0:
     st.warning("⚠️ لم يتم العثور على سجلات تطابق معايير البحث.")
 else:
-    # تحديد عدد الصفوف المعروضة
-    display_limit = st.slider("عدد السجلات المعروضة", min_value=50, max_value=500, value=200, step=50)
+    # إنشاء جدول منسق للعرض
+    def create_styled_table(dataframe, max_rows=100):
+        """إنشاء جدول منسق مع ألوان وتصنيفات"""
+        
+        # تحديد الأعمدة المهمة للعرض
+        important_columns = []
+        for col_key in ["Asset Unique No", "Tag Number", "Description", "Cost", "Net Book Value", "City", "Building"]:
+            col_name = colmap.get(col_key)
+            if col_name and col_name in dataframe.columns:
+                important_columns.append(col_name)
+        
+        # إذا كانت الأعمدة المهمة أقل من 4، أضف أعمدة إضافية
+        if len(important_columns) < 4:
+            additional_cols = [col for col in dataframe.columns if col not in important_columns][:6]
+            important_columns.extend(additional_cols)
+        
+        display_df = dataframe[important_columns].head(max_rows)
+        
+        # إنشاء HTML للجدول المنسق
+        html = f"""
+        <div style="overflow-x: auto; margin: 20px 0;">
+            <table class="print-table">
+                <thead>
+                    <tr>
+        """
+        
+        # رؤوس الأعمدة
+        for col in display_df.columns:
+            html += f'<th>{col}</th>'
+        html += "</tr></thead><tbody>"
+        
+        # بيانات الصفوف
+        for idx, row in display_df.iterrows():
+            html += "<tr>"
+            for col in display_df.columns:
+                value = row[col]
+                cell_class = ""
+                
+                # تحديد لون الخلية بناءً على نوع البيانات
+                if pd.isna(value):
+                    value = "---"
+                    cell_class = "style='background-color: #f8d7da; color: #721c24;'"
+                elif col == colmap.get("Cost") or col == colmap.get("Net Book Value"):
+                    try:
+                        num_value = float(value)
+                        value = f"{num_value:,.2f}"
+                        cell_class = "class='financial-value'"
+                    except:
+                        pass
+                elif col == colmap.get("Asset Unique No") or col == colmap.get("Tag Number"):
+                    cell_class = "class='important-field'"
+                elif col == colmap.get("City") or col == colmap.get("Building"):
+                    cell_class = "class='location-field'"
+                
+                html += f"<td {cell_class}>{value}</td>"
+            
+            html += "</tr>"
+        
+        html += "</tbody></table></div>"
+        return html
     
-    # عرض البيانات مع تحسينات التنسيق
-    st.dataframe(
-        df_filtered.head(display_limit),
-        use_container_width=True,
-        height=400
-    )
+    # عرض الجدول المنسق
+    st.markdown(create_styled_table(df_filtered), unsafe_allow_html=True)
     
-    # تحميل النتائج المصفاة
-    st.markdown("---")
-    st.subheader("💾 تحميل النتائج")
+    # أزرار التحكم
+    col1, col2, col3 = st.columns([1, 1, 1])
     
-    excel_buffer = io.BytesIO()
-    try:
-        with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
-            df_filtered.to_excel(writer, index=False, sheet_name='الأصول_المصفاة')
-    except Exception:
-        excel_buffer = io.BytesIO()
-        df_filtered.to_excel(excel_buffer, index=False)
-    
-    excel_buffer.seek(0)
-    
-    col1, col2 = st.columns(2)
     with col1:
+        if st.button("🖨️ طباعة الجدول", use_container_width=True):
+            st.markdown("""
+            <script>
+            window.print();
+            </script>
+            """, unsafe_allow_html=True)
+            st.success("تم فتح نافذة الطباعة")
+    
+    with col2:
+        # تحميل كـ HTML
+        html_content = create_styled_table(df_filtered, max_rows=1000)
         st.download_button(
-            "📥 تحميل النتائج المفلترة (Excel)",
+            "📥 تحميل كـ HTML",
+            data=html_content,
+            file_name="الجدول_المنسق.html",
+            mime="text/html",
+            use_container_width=True
+        )
+    
+    with col3:
+        # تحميل كـ Excel
+        excel_buffer = io.BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
+            df_filtered.to_excel(writer, index=False, sheet_name='البيانات')
+            
+            # إضافة تنسيقات إلى Excel
+            workbook = writer.book
+            worksheet = writer.sheets['البيانات']
+            
+            # تنسيق الرؤوس
+            header_format = workbook.add_format({
+                'bold': True,
+                'fg_color': '#2E86AB',
+                'font_color': 'white',
+                'border': 1
+            })
+            
+            for col_num, value in enumerate(df_filtered.columns.values):
+                worksheet.write(0, col_num, value, header_format)
+        
+        excel_buffer.seek(0)
+        st.download_button(
+            "📊 تحميل كـ Excel",
             data=excel_buffer,
-            file_name="الأصول_المصفاة.xlsx",
+            file_name="البيانات_المنسقة.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            help="تحميل جميع السجلات المطابقة لمعايير البحث بصيغة Excel"
+            use_container_width=True
         )
 
-# قسم تفاصيل الأصل المحدد
+# قسم التفاصيل المفصلة للأصل المحدد
 st.markdown("---")
-st.subheader("📄 تفاصيل أصل محدد")
+st.subheader("📄 تقرير مفصل لأصل محدد")
 
 id_col = colmap.get("Asset Unique No")
 if not id_col or id_col not in df.columns:
-    st.error("⚠️ لم يتم تعيين عمود 'رقم الأصل الفريد بالجهة' بشكل صحيح.")
-    st.info("يرجى تعيين عمود 'رقم الأصل الفريد بالجهة' في قسم تعيين الأعمدة.")
+    st.error("⚠️ لم يتم تعيين عمود 'رقم الأصل الفريد' بشكل صحيح.")
     st.stop()
 
-# الحصول على قائمة الأصول المصفاة
 asset_ids = df_filtered[id_col].dropna().astype(str).unique().tolist()
 
-if not asset_ids:
-    st.warning("لا توجد أصول مطابقة لمعايير البحث.")
-    st.stop()
-
-selected_asset_id = st.selectbox(
-    "اختر رقم الأصل", 
-    [""] + asset_ids,
-    help="اختر أصلًا من القائمة لعرض تفاصيله الكاملة"
-)
-
-if not selected_asset_id:
-    st.info("👈 اختر أصلًا من القائمة لعرض تفاصيله.")
-    st.stop()
-
-# استرجاع بيانات الأصل المحدد
-asset_data = df[df[id_col].astype(str) == str(selected_asset_id)]
-
-if asset_data.empty:
-    st.error("❌ لم يتم العثور على البيانات الخاصة بالأصل المحدد.")
-    st.stop()
-
-record = asset_data.iloc[0].to_dict()
-
-# عرض تفاصيل الأصل
-col1, col2 = st.columns(2)
-
-with col1:
-    st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-    st.write("### 🏷️ بيانات التعريف")
-    identity_fields = [
-        "Entity Name", "Entity Code", "Asset Unique No", 
-        "Tag Number", "Accounting Group Desc", "Accounting Group Code"
-    ]
+if asset_ids:
+    selected_asset_id = st.selectbox("اختر رقم الأصل", [""] + asset_ids)
     
-    for field in identity_fields:
-        col_name = colmap.get(field)
-        if col_name and col_name in record and pd.notna(record[col_name]):
-            value = record[col_name]
-            st.write(f"**{field}**: {value}")
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-    st.write("### ⚙️ المواصفات الفنية")
-    spec_fields = ["Description", "Manufacturer", "Unit of Measure", "Quantity"]
-    
-    for field in spec_fields:
-        col_name = colmap.get(field)
-        if col_name and col_name in record and pd.notna(record[col_name]):
-            value = record[col_name]
-            st.write(f"**{field}**: {value}")
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-
-with col2:
-    st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-    st.write("### 💰 القيم المالية")
-    financial_fields = [
-        "Cost", "Depreciation Expense", "Accumulated Depreciation", 
-        "Residual Value", "Net Book Value"
-    ]
-    
-    for field in financial_fields:
-        col_name = colmap.get(field)
-        if col_name and col_name in record and pd.notna(record[col_name]):
-            value = record[col_name]
-            # تنسيق القيم المالية إذا كانت رقمية
-            try:
-                if isinstance(value, (int, float)):
-                    value = f"{value:,.2f}"
-            except:
-                pass
-            st.write(f"**{field}**: {value}")
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-    st.write("### 📍 الموقع")
-    location_fields = [
-        "Country", "Region", "City", "Building", 
-        "Floor", "Room/Office", "Coordinates"
-    ]
-    
-    for field in location_fields:
-        col_name = colmap.get(field)
-        if col_name and col_name in record and pd.notna(record[col_name]):
-            value = record[col_name]
-            st.write(f"**{field}**: {value}")
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# خريطة الموقع
-coords_col = colmap.get("Coordinates")
-if coords_col and coords_col in record and isinstance(record[coords_col], str):
-    lat, lon = parse_coordinates(record[coords_col])
-    if lat is not None and lon is not None:
-        st.subheader("🗺️ موقع الأصل")
+    if selected_asset_id:
+        asset_data = df[df[id_col].astype(str) == str(selected_asset_id)]
         
-        try:
-            fig, ax = plt.subplots(figsize=(4, 4))
-            ax.scatter([lon], [lat], s=100, color='red', alpha=0.7)
-            ax.set_xlabel("خط الطول (Longitude)")
-            ax.set_ylabel("خط العرض (Latitude)")
-            ax.set_title("الموقع التقريبي للأصل")
-            ax.grid(True, alpha=0.3)
+        if not asset_data.empty:
+            record = asset_data.iloc[0].to_dict()
             
-            # إضافة هامش حول النقطة
-            margin = 0.02
-            ax.set_xlim(lon - margin, lon + margin)
-            ax.set_ylim(lat - margin, lat + margin)
-            
-            st.pyplot(fig)
-        except Exception as e:
-            st.warning(f"تعذر عرض الخريطة: {str(e)}")
-
-# قسم إنشاء التقارير
-st.markdown("---")
-st.subheader("📄 تقارير قابلة للطباعة")
-
-col1, col2 = st.columns(2)
-
-with col1:
-    if st.button("🖨️ توليد تقرير PDF", type="primary", use_container_width=True):
-        with st.spinner("جاري إنشاء التقرير..."):
-            try:
-                pdf_bytes = make_asset_pdf(record, colmap)
-                st.success("✅ تم إنشاء التقرير بنجاح!")
+            # إنشاء تقرير مفصل منسق
+            def create_detailed_report(record_data, column_mapping):
+                """إنشاء تقرير مفصل منسق للطباعة"""
                 
+                report_html = """
+                <div style="font-family: Arial, sans-serif; max-width: 1000px; margin: 0 auto; padding: 20px; border: 2px solid #1f77b4; border-radius: 10px;">
+                    <div style="text-align: center; background: linear-gradient(135deg, #1f77b4, #2E86AB); color: white; padding: 20px; border-radius: 8px 8px 0 0;">
+                        <h1 style="margin: 0; font-size: 28px;">تقرير مفصل عن الأصل</h1>
+                        <h2 style="margin: 10px 0 0 0; font-size: 22px;">نظام إدارة الأصول</h2>
+                    </div>
+                """
+                
+                # معلومات التعريف
+                report_html += """
+                <div style="margin: 20px 0;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                """
+                
+                sections = [
+                    {
+                        "title": "🆔 بيانات التعريف الأساسية",
+                        "fields": ["Entity Name", "Entity Code", "Asset Unique No", "Tag Number", "Accounting Group Desc", "Accounting Group Code"]
+                    },
+                    {
+                        "title": "⚙️ المواصفات الفنية",
+                        "fields": ["Description", "Manufacturer", "Unit of Measure", "Quantity"]
+                    },
+                    {
+                        "title": "💰 المعلومات المالية",
+                        "fields": ["Cost", "Depreciation Expense", "Accumulated Depreciation", "Residual Value", "Net Book Value"]
+                    },
+                    {
+                        "title": "📍 بيانات الموقع",
+                        "fields": ["Country", "Region", "City", "Building", "Floor", "Room/Office", "Coordinates"]
+                    }
+                ]
+                
+                for section in sections:
+                    report_html += f"""
+                    <tr>
+                        <td colspan="2" style="background-color: #A23B72; color: white; padding: 12px; font-weight: bold; font-size: 16px; text-align: center;">
+                            {section['title']}
+                        </td>
+                    </tr>
+                    """
+                    
+                    for field in section['fields']:
+                        col_name = column_mapping.get(field)
+                        if col_name and col_name in record_data:
+                            value = record_data[col_name]
+                            if pd.notna(value):
+                                # تنسيق القيم المالية
+                                if field in ["Cost", "Depreciation Expense", "Accumulated Depreciation", "Residual Value", "Net Book Value"]:
+                                    try:
+                                        value = f"{float(value):,.2f}"
+                                    except:
+                                        pass
+                                
+                                report_html += f"""
+                                <tr>
+                                    <td style="background-color: #f8f9fa; padding: 10px; border: 1px solid #ddd; font-weight: bold; width: 30%;">
+                                        {field}
+                                    </td>
+                                    <td style="padding: 10px; border: 1px solid #ddd; width: 70%;">
+                                        {value}
+                                    </td>
+                                </tr>
+                                """
+                
+                report_html += """
+                    </table>
+                </div>
+                <div style="text-align: center; margin-top: 30px; padding: 15px; background-color: #f8f9fa; border-radius: 0 0 8px 8px;">
+                    <p style="margin: 0; color: #666;">تم إنشاء هذا التقرير تلقائيًا من نظام إدارة الأصول</p>
+                </div>
+                </div>
+                """
+                
+                return report_html
+            
+            # عرض التقرير المفصل
+            detailed_report = create_detailed_report(record, colmap)
+            st.markdown(detailed_report, unsafe_allow_html=True)
+            
+            # أزرار تحميل التقرير
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if st.button("🖨️ طباعة التقرير المفصل", use_container_width=True):
+                    st.markdown("""
+                    <script>
+                    window.print();
+                    </script>
+                    """, unsafe_allow_html=True)
+            
+            with col2:
                 st.download_button(
-                    "📥 تحميل ورقة الأصل (PDF)",
-                    data=pdf_bytes,
-                    file_name=f"ورقة_الأصل_{selected_asset_id}.pdf",
-                    mime="application/pdf",
+                    "📥 تحميل التقرير كـ HTML",
+                    data=detailed_report,
+                    file_name=f"تقرير_الأصل_{selected_asset_id}.html",
+                    mime="text/html",
                     use_container_width=True
                 )
-            except Exception as e:
-                st.error(f"❌ فشل في إنشاء التقرير: {str(e)}")
 
-with col2:
-    # زر لتصدير جميع البيانات
-    all_data_buffer = io.BytesIO()
-    try:
-        with pd.ExcelWriter(all_data_buffer, engine='xlsxwriter') as writer:
-            df.to_excel(writer, index=False, sheet_name='جميع_البيانات')
-            df_filtered.to_excel(writer, index=False, sheet_name='البيانات_المصفاة')
-    except Exception:
-        all_data_buffer = io.BytesIO()
-        with pd.ExcelWriter(all_data_buffer) as writer:
-            df.to_excel(writer, index=False, sheet_name='جميع_البيانات')
-            df_filtered.to_excel(writer, index=False, sheet_name='البيانات_المصفاة')
+# ملخص إحصائي
+st.markdown("---")
+st.subheader("📈 ملخص إحصائي")
+
+if len(df_filtered) > 0:
+    col1, col2, col3, col4 = st.columns(4)
     
-    all_data_buffer.seek(0)
+    with col1:
+        total_assets = len(df_filtered)
+        st.markdown(f"""
+        <div class="metric-card">
+            <h3 style="margin:0; font-size: 14px;">إجمالي الأصول</h3>
+            <p style="margin:0; font-size: 24px; font-weight: bold;">{total_assets:,}</p>
+        </div>
+        """, unsafe_allow_html=True)
     
-    st.download_button(
-        "📊 تحميل جميع البيانات (Excel)",
-        data=all_data_buffer,
-        file_name="جميع_بيانات_الأصول.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True,
-        help="تحميل جميع البيانات مع ورقة إضافية للبيانات المصفاة"
-    )
+    with col2:
+        cost_col = colmap.get("Cost")
+        total_cost = 0
+        if cost_col and cost_col in df_filtered.columns:
+            total_cost = df_filtered[cost_col].sum()
+        st.markdown(f"""
+        <div class="metric-card">
+            <h3 style="margin:0; font-size: 14px;">إجمالي التكلفة</h3>
+            <p style="margin:0; font-size: 20px; font-weight: bold;">{total_cost:,.2f}</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        nbv_col = colmap.get("Net Book Value")
+        total_nbv = 0
+        if nbv_col and nbv_col in df_filtered.columns:
+            total_nbv = df_filtered[nbv_col].sum()
+        st.markdown(f"""
+        <div class="metric-card">
+            <h3 style="margin:0; font-size: 14px;">صافي القيمة الدفترية</h3>
+            <p style="margin:0; font-size: 20px; font-weight: bold;">{total_nbv:,.2f}</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col4:
+        if city_col and city_col in df_filtered.columns:
+            cities_count = df_filtered[city_col].nunique()
+            st.markdown(f"""
+            <div class="metric-card">
+                <h3 style="margin:0; font-size: 14px;">عدد المدن</h3>
+                <p style="margin:0; font-size: 24px; font-weight: bold;">{cities_count}</p>
+            </div>
+            """, unsafe_allow_html=True)
 
 # تذييل الصفحة
 st.markdown("---")
 st.markdown(
-    '<div class="success-box">'
-    '✅ <strong>الإصدار المحسّن</strong> - تم التصحيح والتحسين بواسطة مبرمج محترف'
+    '<div style="text-align: center; padding: 20px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; border-radius: 10px;">'
+    '<h3 style="margin:0;">✅ الإصدار المحسّن - جداول قابلة للطباعة</h3>'
+    '<p style="margin:5px 0 0 0;">تم التصميم خصيصًا للعرض والطباعة بشكل أنيق ومهني</p>'
     '</div>', 
     unsafe_allow_html=True
 )
