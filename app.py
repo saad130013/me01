@@ -49,35 +49,19 @@ st.markdown("""
         border-radius: 10px;
         margin: 10px 0;
     }
-    .search-highlight {
-        background-color: #fff3cd;
-        padding: 2px 4px;
-        border-radius: 3px;
-        font-weight: bold;
-    }
-    .asset-card {
-        background: white;
-        border-radius: 15px;
-        padding: 20px;
-        margin: 15px 0;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        border-left: 5px solid #1f77b4;
-    }
-    .section-title {
-        background: linear-gradient(135deg, #A23B72, #C73E1D);
-        color: white;
-        padding: 12px;
-        border-radius: 8px;
-        margin: 20px 0 15px 0;
-        font-weight: bold;
-        text-align: center;
-    }
     .search-box {
         background: linear-gradient(135deg, #11998e, #38ef7d);
         color: white;
         padding: 20px;
         border-radius: 15px;
         margin-bottom: 20px;
+    }
+    .warning-card {
+        background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+        color: white;
+        padding: 15px;
+        border-radius: 10px;
+        margin: 10px 0;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -101,7 +85,7 @@ with st.sidebar:
     )
     
     st.markdown("---")
-    st.caption("الإصدار: 6.0 - الذكي والمتطور")
+    st.caption("الإصدار: 6.1 - النظام الذكي المحسن")
 
 # معالجة حالة عدم رفع ملف
 if uploaded_file is None:
@@ -121,11 +105,18 @@ def load_data(uploaded_file):
         st.error(f"❌ تعذر قراءة الملف: {str(e)}")
         return None
 
-# تحضير البيانات
+# تحضير البيانات وتحويل الأنواع
 @st.cache_data(show_spinner="جاري تحضير البيانات...")
 def process_data(df_raw):
     try:
         df_processed = prepare_dataframe(df_raw)
+        
+        # تحويل الأعمدة المالية إلى رقمية
+        financial_columns = ['Cost', 'Net Book Value', 'Accumulated Depreciation', 'Residual Value']
+        for col in financial_columns:
+            if col in df_processed.columns:
+                df_processed[col] = pd.to_numeric(df_processed[col], errors='coerce')
+        
         return df_processed
     except Exception as e:
         st.error(f"❌ خطأ في معالجة البيانات: {str(e)}")
@@ -147,7 +138,7 @@ if df is None:
 # تعيين الأعمدة
 colmap = guess_columns(df.columns)
 
-# الحصول على أعمدة البحث
+# الحصول على أعمدة البحث مع القيم الافتراضية
 unique_asset_col = colmap.get("Asset Unique No") or "Unique Asset Number in the entity"
 tag_col = colmap.get("Tag Number") or "Tag number"
 desc_col = colmap.get("Description") or "Asset Description"
@@ -158,7 +149,23 @@ building_col = colmap.get("Building") or "Building Numbe"
 floor_col = colmap.get("Floor") or "Floor"
 room_col = colmap.get("Room/Office") or "Room/Office"
 
-# 🔍 6. البحث الذكي المتقدم
+# 🔧 دالة لتحويل الأعمدة إلى رقمية
+def convert_to_numeric(df, column_name):
+    """تحويل عمود إلى قيم رقمية مع معالجة الأخطاء"""
+    if column_name not in df.columns:
+        return df, False
+    
+    original_dtype = df[column_name].dtype
+    if np.issubdtype(original_dtype, np.number):
+        return df, True
+    
+    # محاولة التحويل
+    df[column_name] = pd.to_numeric(df[column_name], errors='coerce')
+    successful_conversion = df[column_name].notna().any()
+    
+    return df, successful_conversion
+
+# 🔍 البحث الذكي المتقدم
 def smart_search(df, query):
     """بحث ذكي متقدم مع تصحيح الأخطاء والبحث في جميع الحقول"""
     
@@ -213,7 +220,7 @@ def smart_search(df, query):
     
     return df[mask]
 
-# 📊 1. لوحة التحكم التفاعلية (Dashboard)
+# 📊 لوحة التحكم التفاعلية (Dashboard)
 def create_dashboard(df):
     """إنشاء لوحة تحكم تفاعلية مع مؤشرات الأداء"""
     
@@ -222,18 +229,45 @@ def create_dashboard(df):
     st.markdown("<h2 style='text-align: center; color: white;'>📊 لوحة التحكم الشاملة</h2>", unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
     
+    # تحويل الأعمدة المالية إلى رقمية
+    df_processed = df.copy()
+    cost_converted = False
+    nbv_converted = False
+    
+    if cost_col in df_processed.columns:
+        df_processed, cost_converted = convert_to_numeric(df_processed, cost_col)
+    
+    if nbv_col in df_processed.columns:
+        df_processed, nbv_converted = convert_to_numeric(df_processed, nbv_col)
+    
     # حساب المؤشرات الأساسية
-    total_assets = len(df)
-    total_cost = df[cost_col].sum() if cost_col in df.columns else 0
-    total_nbv = df[nbv_col].sum() if nbv_col in df.columns else 0
-    avg_cost = total_cost / total_assets if total_assets > 0 else 0
+    total_assets = len(df_processed)
+    
+    # حساب القيم المالية مع التحقق من التحويل
+    if cost_converted:
+        total_cost = df_processed[cost_col].sum()
+        avg_cost = total_cost / total_assets if total_assets > 0 else 0
+    else:
+        total_cost = 0
+        avg_cost = 0
+    
+    if nbv_converted:
+        total_nbv = df_processed[nbv_col].sum()
+    else:
+        total_nbv = 0
     
     # حساب معدل الاستهلاك
-    if cost_col in df.columns and nbv_col in df.columns:
-        total_depreciation = (df[cost_col] - df[nbv_col]).sum()
-        depreciation_rate = (total_depreciation / total_cost * 100) if total_cost > 0 else 0
+    if cost_converted and nbv_converted and total_cost > 0:
+        total_depreciation = (df_processed[cost_col] - df_processed[nbv_col]).sum()
+        depreciation_rate = (total_depreciation / total_cost * 100)
     else:
         depreciation_rate = 0
+    
+    # عرض تحذيرات إذا كانت هناك مشاكل في البيانات
+    if not cost_converted or not nbv_converted:
+        st.markdown('<div class="warning-card">', unsafe_allow_html=True)
+        st.warning("⚠️ بعض البيانات المالية تحتوي على قيم غير رقمية وقد لا تظهر جميع التحليلات")
+        st.markdown('</div>', unsafe_allow_html=True)
     
     # مؤشرات الأداء الرئيسية
     col1, col2, col3, col4 = st.columns(4)
@@ -243,7 +277,7 @@ def create_dashboard(df):
         <div class="metric-card">
             <h3 style='margin:0; color: #1f77b4;'>إجمالي الأصول</h3>
             <p style='margin:0; font-size: 24px; font-weight: bold; color: #333;'>{total_assets:,}</p>
-            <p style='margin:0; font-size: 12px; color: #666;'>▲ 5% عن الشهر الماضي</p>
+            <p style='margin:0; font-size: 12px; color: #666;'>الأصول المسجلة</p>
         </div>
         """, unsafe_allow_html=True)
     
@@ -252,7 +286,7 @@ def create_dashboard(df):
         <div class="metric-card">
             <h3 style='margin:0; color: #1f77b4;'>القيمة الإجمالية</h3>
             <p style='margin:0; font-size: 20px; font-weight: bold; color: #333;'>{total_cost:,.0f} ريال</p>
-            <p style='margin:0; font-size: 12px; color: #666;'>▲ 3.2% عن الربع الماضي</p>
+            <p style='margin:0; font-size: 12px; color: #666;'>إجمالي التكلفة</p>
         </div>
         """, unsafe_allow_html=True)
     
@@ -261,7 +295,7 @@ def create_dashboard(df):
         <div class="metric-card">
             <h3 style='margin:0; color: #1f77b4;'>صافي القيمة</h3>
             <p style='margin:0; font-size: 20px; font-weight: bold; color: #333;'>{total_nbv:,.0f} ريال</p>
-            <p style='margin:0; font-size: 12px; color: #666;'>معدل استهلاك {depreciation_rate:.1f}%</p>
+            <p style='margin:0; font-size: 12px; color: #666;'>القيمة الدفترية</p>
         </div>
         """, unsafe_allow_html=True)
     
@@ -282,78 +316,98 @@ def create_dashboard(df):
     
     with col1:
         # توزيع الأصول حسب المدينة
-        if city_col in df.columns:
-            city_distribution = df[city_col].value_counts().head(8)
+        if city_col in df_processed.columns:
+            city_data = df_processed[city_col].value_counts().head(8)
             
-            fig, ax = plt.subplots(figsize=(10, 6))
-            colors = plt.cm.Set3(np.linspace(0, 1, len(city_distribution)))
-            wedges, texts, autotexts = ax.pie(
-                city_distribution.values, 
-                labels=city_distribution.index,
-                autopct='%1.1f%%',
-                startangle=90,
-                colors=colors
-            )
-            
-            # تحسين مظهر النصوص
-            for autotext in autotexts:
-                autotext.set_color('white')
-                autotext.set_fontweight('bold')
-            
-            ax.set_title('توزيع الأصول حسب المدينة', fontsize=14, fontweight='bold')
-            plt.tight_layout()
-            st.pyplot(fig)
+            if not city_data.empty:
+                fig, ax = plt.subplots(figsize=(10, 6))
+                colors = plt.cm.Set3(np.linspace(0, 1, len(city_data)))
+                wedges, texts, autotexts = ax.pie(
+                    city_data.values, 
+                    labels=city_data.index,
+                    autopct='%1.1f%%',
+                    startangle=90,
+                    colors=colors
+                )
+                
+                # تحسين مظهر النصوص
+                for autotext in autotexts:
+                    autotext.set_color('white')
+                    autotext.set_fontweight('bold')
+                
+                ax.set_title('توزيع الأصول حسب المدينة', fontsize=14, fontweight='bold')
+                plt.tight_layout()
+                st.pyplot(fig)
+            else:
+                st.info("لا توجد بيانات كافية لعرض التوزيع الجغرافي")
     
     with col2:
-        # توزيع القيم
-        if cost_col in df.columns:
+        # توزيع القيم إذا كانت البيانات رقمية
+        if cost_converted:
             fig, ax = plt.subplots(figsize=(10, 6))
-            df[cost_col].hist(bins=20, ax=ax, color='skyblue', alpha=0.7, edgecolor='black')
-            ax.set_title('توزيع قيم الأصول', fontsize=14, fontweight='bold')
-            ax.set_xlabel('التكلفة (ريال)')
-            ax.set_ylabel('عدد الأصول')
-            ax.grid(True, alpha=0.3)
-            plt.tight_layout()
-            st.pyplot(fig)
+            valid_costs = df_processed[cost_col].dropna()
+            if not valid_costs.empty:
+                valid_costs.hist(bins=20, ax=ax, color='skyblue', alpha=0.7, edgecolor='black')
+                ax.set_title('توزيع قيم الأصول', fontsize=14, fontweight='bold')
+                ax.set_xlabel('التكلفة (ريال)')
+                ax.set_ylabel('عدد الأصول')
+                ax.grid(True, alpha=0.3)
+                plt.tight_layout()
+                st.pyplot(fig)
+            else:
+                st.info("لا توجد بيانات مالية صالحة للعرض")
+        else:
+            st.info("بيانات التكلفة غير متاحة للتحليل")
     
-    # تحليل القيمة المتبقية
-    st.markdown("---")
-    st.subheader("💰 تحليل القيمة المتبقية")
-    
-    if cost_col in df.columns and nbv_col in df.columns:
-        df_analysis = df.copy()
-        df_analysis['Remaining Value %'] = (df_analysis[nbv_col] / df_analysis[cost_col] * 100).round(1)
+    # تحليل القيمة المتبقية إذا كانت البيانات متاحة
+    if cost_converted and nbv_converted:
+        st.markdown("---")
+        st.subheader("💰 تحليل القيمة المتبقية")
         
-        col1, col2 = st.columns(2)
+        # حساب القيمة المتبقية مع معالجة الأخطاء
+        valid_financial_data = df_processed.dropna(subset=[cost_col, nbv_col])
+        valid_financial_data = valid_financial_data[valid_financial_data[cost_col] > 0]
         
-        with col1:
-            # توزيع القيمة المتبقية
-            fig, ax = plt.subplots(figsize=(10, 6))
-            df_analysis['Remaining Value %'].hist(bins=20, ax=ax, color='lightgreen', alpha=0.7, edgecolor='black')
-            ax.set_title('توزيع نسبة القيمة المتبقية', fontsize=14, fontweight='bold')
-            ax.set_xlabel('نسبة القيمة المتبقية (%)')
-            ax.set_ylabel('عدد الأصول')
-            ax.grid(True, alpha=0.3)
-            plt.tight_layout()
-            st.pyplot(fig)
-        
-        with col2:
-            # أعلى 10 أصول قيمة
-            top_assets = df_analysis.nlargest(10, cost_col)[[unique_asset_col, cost_col, nbv_col, 'Remaining Value %']]
+        if not valid_financial_data.empty:
+            valid_financial_data = valid_financial_data.copy()
+            valid_financial_data['Remaining Value %'] = (
+                valid_financial_data[nbv_col] / valid_financial_data[cost_col] * 100
+            ).round(1)
             
-            # تنسيق الأرقام للعرض
-            display_df = top_assets.copy()
-            display_df[cost_col] = display_df[cost_col].apply(lambda x: f"{x:,.0f}")
-            display_df[nbv_col] = display_df[nbv_col].apply(lambda x: f"{x:,.0f}")
-            display_df['Remaining Value %'] = display_df['Remaining Value %'].apply(lambda x: f"{x}%")
+            col1, col2 = st.columns(2)
             
-            st.dataframe(
-                display_df,
-                use_container_width=True,
-                height=400
-            )
+            with col1:
+                # توزيع القيمة المتبقية
+                fig, ax = plt.subplots(figsize=(10, 6))
+                valid_financial_data['Remaining Value %'].hist(
+                    bins=20, ax=ax, color='lightgreen', alpha=0.7, edgecolor='black'
+                )
+                ax.set_title('توزيع نسبة القيمة المتبقية', fontsize=14, fontweight='bold')
+                ax.set_xlabel('نسبة القيمة المتبقية (%)')
+                ax.set_ylabel('عدد الأصول')
+                ax.grid(True, alpha=0.3)
+                plt.tight_layout()
+                st.pyplot(fig)
+            
+            with col2:
+                # أعلى 10 أصول قيمة
+                top_assets = valid_financial_data.nlargest(10, cost_col)[
+                    [unique_asset_col, cost_col, nbv_col, 'Remaining Value %']
+                ]
+                
+                # تنسيق الأرقام للعرض
+                display_df = top_assets.copy()
+                display_df[cost_col] = display_df[cost_col].apply(lambda x: f"{x:,.0f}")
+                display_df[nbv_col] = display_df[nbv_col].apply(lambda x: f"{x:,.0f}")
+                display_df['Remaining Value %'] = display_df['Remaining Value %'].apply(lambda x: f"{x}%")
+                
+                st.dataframe(
+                    display_df,
+                    use_container_width=True,
+                    height=400
+                )
 
-# 📈 4. تحليل القيمة والاستهلاك
+# 📈 تحليل القيمة والاستهلاك
 def depreciation_analysis(df):
     """تحليل متقدم للقيمة والاستهلاك"""
     
@@ -362,15 +416,37 @@ def depreciation_analysis(df):
     st.markdown("<h2 style='text-align: center; color: white;'>📊 تحليل القيمة والاستهلاك</h2>", unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
     
-    if cost_col not in df.columns or nbv_col not in df.columns:
-        st.warning("⚠️ لا توجد بيانات مالية كافية للتحليل")
+    # تحويل الأعمدة المالية
+    df_processed = df.copy()
+    cost_converted = False
+    nbv_converted = False
+    
+    if cost_col in df_processed.columns:
+        df_processed, cost_converted = convert_to_numeric(df_processed, cost_col)
+    
+    if nbv_col in df_processed.columns:
+        df_processed, nbv_converted = convert_to_numeric(df_processed, nbv_col)
+    
+    if not cost_converted or not nbv_converted:
+        st.error("❌ لا توجد بيانات مالية صالحة للتحليل")
         return
     
     # حساب معدلات الاستهلاك
-    df_analysis = df.copy()
+    valid_data = df_processed.dropna(subset=[cost_col, nbv_col])
+    valid_data = valid_data[valid_data[cost_col] > 0]
+    
+    if valid_data.empty:
+        st.warning("⚠️ لا توجد بيانات مالية كافية للتحليل")
+        return
+    
+    df_analysis = valid_data.copy()
     df_analysis['Accumulated Depreciation'] = df_analysis[cost_col] - df_analysis[nbv_col]
-    df_analysis['Depreciation Rate %'] = (df_analysis['Accumulated Depreciation'] / df_analysis[cost_col] * 100).round(1)
-    df_analysis['Remaining Value %'] = (df_analysis[nbv_col] / df_analysis[cost_col] * 100).round(1)
+    df_analysis['Depreciation Rate %'] = (
+        df_analysis['Accumulated Depreciation'] / df_analysis[cost_col] * 100
+    ).round(1)
+    df_analysis['Remaining Value %'] = (
+        df_analysis[nbv_col] / df_analysis[cost_col] * 100
+    ).round(1)
     
     # مؤشرات الاستهلاك
     col1, col2, col3, col4 = st.columns(4)
@@ -409,8 +485,13 @@ def depreciation_analysis(df):
     with col2:
         # العلاقة بين التكلفة ومعدل الاستهلاك
         fig, ax = plt.subplots(figsize=(10, 6))
-        scatter = ax.scatter(df_analysis[cost_col], df_analysis['Depreciation Rate %'], 
-                           alpha=0.6, c=df_analysis['Depreciation Rate %'], cmap='viridis')
+        scatter = ax.scatter(
+            df_analysis[cost_col], 
+            df_analysis['Depreciation Rate %'], 
+            alpha=0.6, 
+            c=df_analysis['Depreciation Rate %'], 
+            cmap='viridis'
+        )
         ax.set_title('العلاقة بين التكلفة ومعدل الاستهلاك', fontsize=14, fontweight='bold')
         ax.set_xlabel('التكلفة (ريال)')
         ax.set_ylabel('معدل الاستهلاك (%)')
@@ -418,81 +499,6 @@ def depreciation_analysis(df):
         plt.colorbar(scatter, ax=ax)
         plt.tight_layout()
         st.pyplot(fig)
-    
-    # تحليل القيمة المتبقية
-    st.markdown("---")
-    st.subheader("💰 تحليل القيمة المتبقية")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # توزيع القيمة المتبقية
-        fig, ax = plt.subplots(figsize=(10, 6))
-        df_analysis['Remaining Value %'].hist(bins=20, ax=ax, color='lightgreen', alpha=0.7, edgecolor='black')
-        ax.set_title('توزيع نسبة القيمة المتبقية', fontsize=14, fontweight='bold')
-        ax.set_xlabel('نسبة القيمة المتبقية (%)')
-        ax.set_ylabel('عدد الأصول')
-        ax.grid(True, alpha=0.3)
-        plt.tight_layout()
-        st.pyplot(fig)
-    
-    with col2:
-        # تصنيف الأصول حسب القيمة المتبقية
-        value_categories = pd.cut(df_analysis['Remaining Value %'], 
-                                bins=[0, 20, 50, 80, 100], 
-                                labels=['منخفضة جداً', 'منخفضة', 'متوسطة', 'عالية'])
-        category_counts = value_categories.value_counts()
-        
-        fig, ax = plt.subplots(figsize=(10, 6))
-        colors = ['#ff6b6b', '#ffa726', '#66bb6a', '#42a5f5']
-        bars = ax.bar(category_counts.index, category_counts.values, color=colors)
-        
-        # إضافة القيم على الأعمدة
-        for bar, value in zip(bars, category_counts.values):
-            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.1, 
-                   str(value), ha='center', va='bottom', fontweight='bold')
-        
-        ax.set_title('تصنيف الأصول حسب القيمة المتبقية', fontsize=14, fontweight='bold')
-        ax.set_xlabel('فئة القيمة')
-        ax.set_ylabel('عدد الأصول')
-        ax.tick_params(axis='x', rotation=45)
-        plt.tight_layout()
-        st.pyplot(fig)
-    
-    # تقرير الأصول عالية الاستهلاك
-    st.markdown("---")
-    st.subheader("⚠️ الأصول عالية الاستهلاك (معدل استهلاك > 50%)")
-    
-    high_depreciation_df = df_analysis[df_analysis['Depreciation Rate %'] > 50]
-    if not high_depreciation_df.empty:
-        display_cols = [unique_asset_col, tag_col, desc_col, cost_col, nbv_col, 'Depreciation Rate %']
-        available_cols = [col for col in display_cols if col in high_depreciation_df.columns]
-        
-        # تنسيق البيانات للعرض
-        display_df = high_depreciation_df[available_cols].copy()
-        if cost_col in display_df.columns:
-            display_df[cost_col] = display_df[cost_col].apply(lambda x: f"{x:,.0f}")
-        if nbv_col in display_df.columns:
-            display_df[nbv_col] = display_df[nbv_col].apply(lambda x: f"{x:,.0f}")
-        if 'Depreciation Rate %' in display_df.columns:
-            display_df['Depreciation Rate %'] = display_df['Depreciation Rate %'].apply(lambda x: f"{x}%")
-        
-        st.dataframe(
-            display_df,
-            use_container_width=True,
-            height=300
-        )
-        
-        # خيار تحميل التقرير
-        csv = high_depreciation_df[available_cols].to_csv(index=False, encoding='utf-8-sig')
-        st.download_button(
-            "📥 تحميل تقرير الأصول عالية الاستهلاك",
-            data=csv,
-            file_name="الاصول_عالية_الاستهلاك.csv",
-            mime="text/csv"
-        )
-    else:
-        st.success("🎉 لا توجد أصول عالية الاستهلاك")
 
 # قسم البحث الرئيسي
 st.markdown("---")
@@ -562,23 +568,19 @@ else:  # جميع الوظائف
     create_dashboard(df_filtered)
     depreciation_analysis(df_filtered)
 
-# عرض إحصائيات سريعة دائماً
+# عرض إحصائيات سريعة
 total_filtered = len(df_filtered)
 if total_filtered > 0:
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 📈 نتائج البحث")
     st.sidebar.metric("عدد الأصول المطابقة", total_filtered)
-    
-    if cost_col in df_filtered.columns:
-        filtered_cost = df_filtered[cost_col].sum()
-        st.sidebar.metric("القيمة الإجمالية", f"{filtered_cost:,.0f}")
 
 # تذييل الصفحة
 st.markdown("---")
 st.markdown(
     '<div style="text-align: center; padding: 20px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; border-radius: 10px;">'
-    '<h3 style="margin:0;">✅ الإصدار 6.0 - النظام الذكي</h3>'
-    '<p style="margin:5px 0 0 0;">لوحة تحكم + بحث ذكي + تحليل متقدم</p>'
+    '<h3 style="margin:0;">✅ الإصدار 6.1 - النظام الذكي المحسن</h3>'
+    '<p style="margin:5px 0 0 0;">معالجة ذكية للبيانات المالية</p>'
     '</div>', 
     unsafe_allow_html=True
 )
