@@ -60,6 +60,22 @@ st.markdown("""
         border-radius: 15px;
         margin-bottom: 20px;
     }
+    .dashboard-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 20px;
+        border-radius: 15px;
+        margin: 10px 0;
+        text-align: center;
+    }
+    .asset-card {
+        background: white;
+        border-radius: 15px;
+        padding: 20px;
+        margin: 15px 0;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        border-left: 5px solid #1f77b4;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -78,7 +94,7 @@ with st.sidebar:
     st.header("🎯 خيارات العرض")
     display_mode = st.radio(
         "طريقة العرض:",
-        ["المساعد الذكي", "لوحة التحكم", "البطاقات التفصيلية"]
+        ["المساعد الذكي", "لوحة التحكم", "البطاقات التفصيلية", "التحليل المالي"]
     )
     
     st.markdown("---")
@@ -106,12 +122,11 @@ def load_data(uploaded_file):
 @st.cache_data(show_spinner="جاري تحضير البيانات...")
 def process_data(df_raw):
     try:
-        # استخدام دالة prepare_dataframe إذا كانت موجودة، وإلا استخدام معالجة أساسية
-        try:
-            from utils_prepare import prepare_dataframe
-            df_processed = prepare_dataframe(df_raw)
-        except:
-            df_processed = df_raw.copy()
+        # معالجة أساسية للبيانات
+        df_processed = df_raw.copy()
+        
+        # تنظيف الأسماء
+        df_processed.columns = df_processed.columns.str.strip()
         
         # تحويل الأعمدة المالية إلى رقمية
         financial_columns = ['Cost', 'Net Book Value', 'Accumulated Depreciation', 'Residual Value']
@@ -137,42 +152,82 @@ with st.spinner("جاري معالجة البيانات..."):
 if df is None:
     st.stop()
 
-# تخمين الأعمدة إذا لم تكن utils_prepare متاحة
+# تخمين الأعمدة
 def guess_columns(columns):
     """تخمين أسماء الأعمدة الأساسية"""
     colmap = {}
     
     # البحث عن الأعمدة الشائعة
     for col in columns:
-        col_lower = str(col).lower()
-        if any(word in col_lower for word in ['unique', 'asset no', 'رقم الأصل']):
-            colmap['Asset Unique No'] = col
-        elif any(word in col_lower for word in ['tag', 'وسم', 'رقم الوسم']):
-            colmap['Tag Number'] = col
-        elif any(word in col_lower for word in ['description', 'وصف', 'الوصف']):
-            colmap['Description'] = col
+        col_str = str(col)
+        col_lower = col_str.lower()
+        
+        if any(word in col_lower for word in ['unique', 'asset no', 'رقم الأصل', 'asset unique']):
+            colmap['Asset Unique No'] = col_str
+        elif any(word in col_lower for word in ['tag', 'وسم', 'رقم الوسم', 'tag number']):
+            colmap['Tag Number'] = col_str
+        elif any(word in col_lower for word in ['description', 'وصف', 'الوصف', 'asset description']):
+            colmap['Description'] = col_str
         elif any(word in col_lower for word in ['cost', 'تكلفة', 'التكلفة']):
-            colmap['Cost'] = col
-        elif any(word in col_lower for word in ['net book', 'صافي', 'القيمة الدفترية']):
-            colmap['Net Book Value'] = col
+            colmap['Cost'] = col_str
+        elif any(word in col_lower for word in ['net book', 'صافي', 'القيمة الدفترية', 'net book value']):
+            colmap['Net Book Value'] = col_str
         elif any(word in col_lower for word in ['city', 'مدينة', 'المدينة']):
-            colmap['City'] = col
-        elif any(word in col_lower for word in ['building', 'مبنى', 'المبنى']):
-            colmap['Building'] = col
+            colmap['City'] = col_str
+        elif any(word in col_lower for word in ['building', 'مبنى', 'المبنى', 'building number']):
+            colmap['Building'] = col_str
+        elif any(word in col_lower for word in ['floor', 'دور', 'الطابق']):
+            colmap['Floor'] = col_str
+        elif any(word in col_lower for word in ['room', 'office', 'غرفة', 'مكتب']):
+            colmap['Room/Office'] = col_str
+    
+    # تعيين قيم افتراضية إذا لم يتم العثور على الأعمدة
+    default_columns = {
+        'Asset Unique No': 'Unique Asset Number in the entity',
+        'Tag Number': 'Tag number', 
+        'Description': 'Asset Description',
+        'Cost': 'Cost',
+        'Net Book Value': 'Net Book Value',
+        'City': 'City',
+        'Building': 'Building Numbe',
+        'Floor': 'Floor',
+        'Room/Office': 'Room/Office'
+    }
+    
+    for key, default in default_columns.items():
+        if key not in colmap:
+            colmap[key] = default
     
     return colmap
 
 # تعيين الأعمدة
 colmap = guess_columns(df.columns)
 
-# الحصول على أعمدة البحث مع القيم الافتراضية
-unique_asset_col = colmap.get("Asset Unique No", "Unique Asset Number in the entity")
-tag_col = colmap.get("Tag Number", "Tag number")
-desc_col = colmap.get("Description", "Asset Description")
-cost_col = colmap.get("Cost", "Cost")
-nbv_col = colmap.get("Net Book Value", "Net Book Value")
-city_col = colmap.get("City", "City")
-building_col = colmap.get("Building", "Building Numbe")
+# الحصول على أعمدة البحث
+unique_asset_col = colmap["Asset Unique No"]
+tag_col = colmap["Tag Number"]
+desc_col = colmap["Description"]
+cost_col = colmap["Cost"]
+nbv_col = colmap["Net Book Value"]
+city_col = colmap["City"]
+building_col = colmap["Building"]
+floor_col = colmap["Floor"]
+room_col = colmap["Room/Office"]
+
+# 🔧 دالة لتحويل الأعمدة إلى رقمية
+def convert_to_numeric(df, column_name):
+    """تحويل عمود إلى قيم رقمية مع معالجة الأخطاء"""
+    if column_name not in df.columns:
+        return df, False
+    
+    original_dtype = df[column_name].dtype
+    if np.issubdtype(original_dtype, np.number):
+        return df, True
+    
+    df[column_name] = pd.to_numeric(df[column_name], errors='coerce')
+    successful_conversion = df[column_name].notna().any()
+    
+    return df, successful_conversion
 
 # 🤖 نظام الذكاء الاصطناعي للمساعد
 class AssetAIAssistant:
@@ -200,12 +255,10 @@ class AssetAIAssistant:
         self.nbv_converted = False
         
         if self.cost_col in self.df_processed.columns:
-            self.df_processed[self.cost_col] = pd.to_numeric(self.df_processed[self.cost_col], errors='coerce')
-            self.cost_converted = self.df_processed[self.cost_col].notna().any()
+            self.df_processed, self.cost_converted = convert_to_numeric(self.df_processed, self.cost_col)
         
         if self.nbv_col in self.df_processed.columns:
-            self.df_processed[self.nbv_col] = pd.to_numeric(self.df_processed[self.nbv_col], errors='coerce')
-            self.nbv_converted = self.df_processed[self.nbv_col].notna().any()
+            self.df_processed, self.nbv_converted = convert_to_numeric(self.df_processed, self.nbv_col)
         
         # حساب الإحصائيات الأساسية
         self.total_assets = len(self.df_processed)
@@ -382,7 +435,48 @@ class AssetAIAssistant:
                 response += f"• {city}: {count} أصل\n"
         
         return response
-    
+
+    def handle_depreciation_questions(self, question):
+        """معالجة أسئلة الاستهلاك"""
+        if not self.cost_converted or not self.nbv_converted:
+            return "⚠️ لا توجد بيانات مالية كافية لتحليل الاستهلاك."
+        
+        depreciation = self.total_cost - self.total_nbv
+        dep_rate = (depreciation / self.total_cost * 100) if self.total_cost > 0 else 0
+        
+        response = f"**تحليل الاستهلاك:**\n\n"
+        response += f"• إجمالي الاستهلاك: **{depreciation:,.0f} ريال**\n"
+        response += f"• معدل الاستهلاك: **{dep_rate:.1f}%**\n"
+        
+        return response
+
+    def handle_city_questions(self, question):
+        """معالجة الأسئلة المتعلقة بالمدن"""
+        if self.city_col not in self.df_processed.columns:
+            return "⚠️ لا توجد بيانات عن المدن."
+        
+        city_stats = self.df_processed[self.city_col].value_counts()
+        response = "**توزيع الأصول حسب المدينة:**\n\n"
+        for city, count in city_stats.head(5).items():
+            response += f"• {city}: {count} أصل\n"
+        
+        return response
+
+    def handle_top_questions(self, question):
+        """معالجة أسئلة الأعلى والأكبر"""
+        if not self.cost_converted:
+            return "⚠️ لا توجد بيانات مالية للتحليل."
+        
+        top_assets = self.df_processed.nlargest(5, self.cost_col)
+        
+        response = "**أغلى 5 أصول:**\n\n"
+        for i, (idx, asset) in enumerate(top_assets.iterrows(), 1):
+            desc = asset.get(self.desc_col, 'غير محدد')
+            cost = asset.get(self.cost_col, 0)
+            response += f"{i}. **{desc}** - {cost:,.0f} ريال\n"
+        
+        return response
+
     def handle_general_questions(self, question):
         """معالجة الأسئلة العامة"""
         general_responses = [
