@@ -1,92 +1,490 @@
-
-from fpdf import FPDF
-from bidi.algorithm import get_display
-import arabic_reshaper
-from io import BytesIO
-import qrcode
+import io
+import pandas as pd
+import streamlit as st
+import matplotlib.pyplot as plt
+import numpy as np
 from datetime import datetime
+import re
 
-# Helper: reshape & bidi Arabic text
-def ar(text):
-    if text is None:
-        return ""
+# إعداد الصفحة
+st.set_page_config(
+    page_title="نظام إدارة الأصول - المساعد الذكي",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# تنسيقات CSS مخصصة
+st.markdown("""
+<style>
+    .main-header {
+        font-size: 2.5rem;
+        color: #1f77b4;
+        text-align: center;
+        margin-bottom: 2rem;
+        border-bottom: 3px solid #1f77b4;
+        padding-bottom: 1rem;
+    }
+    .ai-assistant {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 20px;
+        border-radius: 15px;
+        margin: 10px 0;
+    }
+    .user-message {
+        background: #e3f2fd;
+        padding: 15px;
+        border-radius: 10px;
+        margin: 10px 0;
+        border-right: 4px solid #2196f3;
+    }
+    .ai-response {
+        background: #f3e5f5;
+        padding: 15px;
+        border-radius: 10px;
+        margin: 10px 0;
+        border-right: 4px solid #9c27b0;
+    }
+    .metric-card {
+        background: white;
+        border-radius: 10px;
+        padding: 15px;
+        margin: 5px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        border-left: 4px solid #1f77b4;
+    }
+    .search-box {
+        background: linear-gradient(135deg, #11998e, #38ef7d);
+        color: white;
+        padding: 20px;
+        border-radius: 15px;
+        margin-bottom: 20px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown('<h1 class="main-header">🤖 المساعد الذكي لإدارة الأصول</h1>', unsafe_allow_html=True)
+
+# الشريط الجانبي
+with st.sidebar:
+    st.header("📁 تحميل البيانات")
+    uploaded_file = st.file_uploader(
+        "ارفع ملف Excel للسجل", 
+        type=["xlsx", "xls"],
+        help="يجب أن يكون الملف بصيغة Excel مع هيكل بيانات الأصول القياسي"
+    )
+    
+    st.markdown("---")
+    st.header("🎯 خيارات العرض")
+    display_mode = st.radio(
+        "طريقة العرض:",
+        ["المساعد الذكي", "لوحة التحكم", "البطاقات التفصيلية"]
+    )
+    
+    st.markdown("---")
+    st.caption("الإصدار: 7.0 - المساعد الذكي المتكامل")
+
+# معالجة حالة عدم رفع ملف
+if uploaded_file is None:
+    st.info("👆 الرجاء رفع ملف السجل (Excel) لبدء استخدام النظام.")
+    st.stop()
+
+# تحميل البيانات
+@st.cache_data(show_spinner="جاري تحميل البيانات...")
+def load_data(uploaded_file):
     try:
-        reshaped = arabic_reshaper.reshape(str(text))
-        return get_display(reshaped)
-    except Exception:
-        return str(text)
+        df_raw = pd.read_excel(uploaded_file, header=1)
+        if df_raw.empty:
+            st.error("الملف المرفوع فارغ أو لا يحتوي على بيانات.")
+            return None
+        return df_raw
+    except Exception as e:
+        st.error(f"❌ تعذر قراءة الملف: {str(e)}")
+        return None
 
-class AssetPDF(FPDF):
-    def header(self):
-        self.set_font("Arial", "", 10)
-        self.cell(0, 8, ar("ورقة بيانات الأصل"), 0, 1, "R")
-        self.ln(2)
+# تحضير البيانات وتحويل الأنواع
+@st.cache_data(show_spinner="جاري تحضير البيانات...")
+def process_data(df_raw):
+    try:
+        # استخدام دالة prepare_dataframe إذا كانت موجودة، وإلا استخدام معالجة أساسية
+        try:
+            from utils_prepare import prepare_dataframe
+            df_processed = prepare_dataframe(df_raw)
+        except:
+            df_processed = df_raw.copy()
+        
+        # تحويل الأعمدة المالية إلى رقمية
+        financial_columns = ['Cost', 'Net Book Value', 'Accumulated Depreciation', 'Residual Value']
+        for col in financial_columns:
+            if col in df_processed.columns:
+                df_processed[col] = pd.to_numeric(df_processed[col], errors='coerce')
+        
+        return df_processed
+    except Exception as e:
+        st.error(f"❌ خطأ في معالجة البيانات: {str(e)}")
+        return None
 
-    def footer(self):
-        self.set_y(-15)
-        self.set_font("Arial", "I", 8)
-        self.cell(0, 10, f"{datetime.now():%Y-%m-%d %H:%M}", 0, 0, "L")
-        self.cell(0, 10, "Page " + str(self.page_no()) + "/{nb}", 0, 0, "R")
+# تحميل ومعالجة البيانات
+with st.spinner("جاري تحميل البيانات..."):
+    df_raw = load_data(uploaded_file)
 
-def make_asset_pdf(record: dict, colmap: dict) -> bytes:
-    pdf = AssetPDF(orientation="P", unit="mm", format="A4")
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.alias_nb_pages()
-    pdf.add_page()
+if df_raw is None:
+    st.stop()
 
-    # Add Arabic-capable font (built-in Arial doesn't support Arabic shaping, but we will reshape+bidi)
-    # For best results, embed a TTF like Tajawal if available.
-    # Here we rely on reshaping + bidi with default font.
-    pdf.set_font("Arial","",12)
+with st.spinner("جاري معالجة البيانات..."):
+    df = process_data(df_raw)
 
-    # Title
-    pdf.set_font("Arial","B",14)
-    pdf.cell(0, 10, ar("بيانات الأصل التفصيلية"), 0, 1, "R")
-    pdf.ln(2)
+if df is None:
+    st.stop()
 
-    def row(k, key):
-        v = record.get(colmap.get(key), "")
-        pdf.set_font("Arial","B",11); pdf.cell(60, 8, ar(k), 0, 0, "R")
-        pdf.set_font("Arial","",11);   pdf.cell(0, 8, ar(v), 0, 1, "R")
+# تخمين الأعمدة إذا لم تكن utils_prepare متاحة
+def guess_columns(columns):
+    """تخمين أسماء الأعمدة الأساسية"""
+    colmap = {}
+    
+    # البحث عن الأعمدة الشائعة
+    for col in columns:
+        col_lower = str(col).lower()
+        if any(word in col_lower for word in ['unique', 'asset no', 'رقم الأصل']):
+            colmap['Asset Unique No'] = col
+        elif any(word in col_lower for word in ['tag', 'وسم', 'رقم الوسم']):
+            colmap['Tag Number'] = col
+        elif any(word in col_lower for word in ['description', 'وصف', 'الوصف']):
+            colmap['Description'] = col
+        elif any(word in col_lower for word in ['cost', 'تكلفة', 'التكلفة']):
+            colmap['Cost'] = col
+        elif any(word in col_lower for word in ['net book', 'صافي', 'القيمة الدفترية']):
+            colmap['Net Book Value'] = col
+        elif any(word in col_lower for word in ['city', 'مدينة', 'المدينة']):
+            colmap['City'] = col
+        elif any(word in col_lower for word in ['building', 'مبنى', 'المبنى']):
+            colmap['Building'] = col
+    
+    return colmap
 
-    # Sections
-    pdf.set_font("Arial","B",12); pdf.cell(0, 8, ar("أولاً: بيانات التعريف"), 0, 1, "R")
-    for k, key in [("اسم الجهة","Entity Name"),("رمز الجهة","Entity Code"),
-                   ("رقم الأصل الفريد","Asset Unique No"),("رقم البطاقة/الوسم","Tag Number"),
-                   ("رمز المجموعة المحاسبية","Accounting Group Code"),("وصف المجموعة المحاسبية","Accounting Group Desc")]:
-        row(k, key)
+# تعيين الأعمدة
+colmap = guess_columns(df.columns)
 
-    pdf.ln(2)
-    pdf.set_font("Arial","B",12); pdf.cell(0, 8, ar("ثانياً: المواصفات"), 0, 1, "R")
-    for k, key in [("وصف الأصل","Description"),("المصنّع","Manufacturer"),
-                   ("وحدة القياس","Unit of Measure"),("العدد","Quantity")]:
-        row(k, key)
+# الحصول على أعمدة البحث مع القيم الافتراضية
+unique_asset_col = colmap.get("Asset Unique No", "Unique Asset Number in the entity")
+tag_col = colmap.get("Tag Number", "Tag number")
+desc_col = colmap.get("Description", "Asset Description")
+cost_col = colmap.get("Cost", "Cost")
+nbv_col = colmap.get("Net Book Value", "Net Book Value")
+city_col = colmap.get("City", "City")
+building_col = colmap.get("Building", "Building Numbe")
 
-    pdf.ln(2)
-    pdf.set_font("Arial","B",12); pdf.cell(0, 8, ar("ثالثاً: القيم المالية"), 0, 1, "R")
-    for k, key in [("التكلفة","Cost"),("قسط الاهلاك","Depreciation Expense"),
-                   ("الاستهلاك المتراكم","Accumulated Depreciation"),
-                   ("القيمة المتبقية","Residual Value"),("القيمة الدفترية","Net Book Value")]:
-        row(k, key)
+# 🤖 نظام الذكاء الاصطناعي للمساعد
+class AssetAIAssistant:
+    def __init__(self, df):
+        self.df = df
+        self.setup_columns()
+        self.prepare_data()
+        
+    def setup_columns(self):
+        """إعداد الأعمدة المستخدمة في التحليل"""
+        self.unique_asset_col = unique_asset_col
+        self.tag_col = tag_col
+        self.desc_col = desc_col
+        self.cost_col = cost_col
+        self.nbv_col = nbv_col
+        self.city_col = city_col
+        self.building_col = building_col
+        
+    def prepare_data(self):
+        """تحضير البيانات للتحليل"""
+        self.df_processed = self.df.copy()
+        
+        # تحويل الأعمدة المالية
+        self.cost_converted = False
+        self.nbv_converted = False
+        
+        if self.cost_col in self.df_processed.columns:
+            self.df_processed[self.cost_col] = pd.to_numeric(self.df_processed[self.cost_col], errors='coerce')
+            self.cost_converted = self.df_processed[self.cost_col].notna().any()
+        
+        if self.nbv_col in self.df_processed.columns:
+            self.df_processed[self.nbv_col] = pd.to_numeric(self.df_processed[self.nbv_col], errors='coerce')
+            self.nbv_converted = self.df_processed[self.nbv_col].notna().any()
+        
+        # حساب الإحصائيات الأساسية
+        self.total_assets = len(self.df_processed)
+        self.total_cost = self.df_processed[self.cost_col].sum() if self.cost_converted else 0
+        self.total_nbv = self.df_processed[self.nbv_col].sum() if self.nbv_converted else 0
+        
+    def analyze_question(self, question):
+        """تحليل السؤال وتحديد نوعه"""
+        question = question.lower().strip()
+        
+        # أنماط الأسئلة
+        patterns = {
+            'count': r'(كم|عدد|كم عدد|ما عدد|كم يوجد|كم لدينا)',
+            'cost': r'(تكلفة|سعر|قيمة|ثمن|مبلغ|التكلفة|القيمة)',
+            'location': r'(أين|مكان|موقع|في أي|مكان وجود|أين يوجد)',
+            'search': r'(ابحث|عرض|أرني|اظهر|جد|ابحث عن|عرض لي)',
+            'summary': r'(ملخص|إحصائيات|نظرة|عرض عام|معلومات عامة)',
+            'depreciation': r'(استهلاك|إهلاك|مستهلَك|قيمة متبقية|صافي قيمة)',
+            'city': r'(مدينة|منطقة|موقع جغرافي|في الرياض|في جدة)',
+            'top': r'(أعلى|أكبر|أغلى|أعلى قيمة|أكبر تكلفة)'
+        }
+        
+        question_type = 'general'
+        for q_type, pattern in patterns.items():
+            if re.search(pattern, question):
+                question_type = q_type
+                break
+                
+        return question_type
+    
+    def generate_response(self, question):
+        """توليد رد بناءً على نوع السؤال"""
+        try:
+            question_type = self.analyze_question(question)
+            
+            if question_type == 'count':
+                return self.handle_count_questions(question)
+            elif question_type == 'cost':
+                return self.handle_cost_questions(question)
+            elif question_type == 'location':
+                return self.handle_location_questions(question)
+            elif question_type == 'search':
+                return self.handle_search_questions(question)
+            elif question_type == 'summary':
+                return self.handle_summary_questions(question)
+            elif question_type == 'depreciation':
+                return self.handle_depreciation_questions(question)
+            elif question_type == 'city':
+                return self.handle_city_questions(question)
+            elif question_type == 'top':
+                return self.handle_top_questions(question)
+            else:
+                return self.handle_general_questions(question)
+        except Exception as e:
+            return f"⚠️ حدث خطأ في معالجة سؤالك: {str(e)}"
+    
+    def handle_count_questions(self, question):
+        """معالجة أسئلة العد والإحصاء"""
+        if 'أصل' in question or 'أصول' in question:
+            response = f"إجمالي عدد الأصول في النظام: **{self.total_assets:,}** أصل"
+            
+            if self.city_col in self.df_processed.columns:
+                city_counts = self.df_processed[self.city_col].value_counts().head(5)
+                if not city_counts.empty:
+                    response += "\n\n**التوزيع حسب المدن:**"
+                    for city, count in city_counts.items():
+                        response += f"\n• {city}: {count:,} أصل"
+            
+            return response
+        
+        return "يمكنني مساعدتك في معرفة عدد الأصول. هل تقصد عدد الأصول الكلي؟"
+    
+    def handle_cost_questions(self, question):
+        """معالجة الأسئلة المتعلقة بالتكلفة والقيمة"""
+        if not self.cost_converted:
+            return "⚠️ عذراً، لا توجد بيانات مالية متاحة للتحليل."
+        
+        if 'إجمالي' in question or 'كلي' in question or 'مجموع' in question:
+            return f"**إجمالي قيمة الأصول:** {self.total_cost:,.0f} ريال\n\n**صافي القيمة الدفترية:** {self.total_nbv:,.0f} ريال"
+        
+        elif 'متوسط' in question or 'معدل' in question:
+            avg_cost = self.total_cost / self.total_assets if self.total_assets > 0 else 0
+            return f"**متوسط تكلفة الأصل الواحد:** {avg_cost:,.0f} ريال"
+        
+        elif 'أعلى' in question or 'أغلى' in question:
+            top_assets = self.df_processed.nlargest(5, self.cost_col)
+            response = "**أغلى 5 أصول:**\n"
+            for idx, asset in top_assets.iterrows():
+                asset_name = asset.get(self.desc_col, 'غير محدد')
+                cost = asset.get(self.cost_col, 0)
+                response += f"\n• {asset_name}: {cost:,.0f} ريال"
+            return response
+        
+        return f"إجمالي تكلفة جميع الأصول: **{self.total_cost:,.0f} ريال**"
+    
+    def handle_location_questions(self, question):
+        """معالجة الأسئلة المتعلقة بالمواقع"""
+        if self.city_col not in self.df_processed.columns:
+            return "⚠️ لا توجد بيانات عن مواقع الأصول."
+        
+        cities = self.df_processed[self.city_col].dropna().unique()
+        
+        if 'أين' in question or 'مكان' in question:
+            # البحث عن أصل محدد في السؤال
+            for word in question.split():
+                if len(word) > 2:
+                    found_assets = self.df_processed[
+                        self.df_processed[self.desc_col].astype(str).str.contains(word, na=False) |
+                        self.df_processed[self.tag_col].astype(str).str.contains(word, na=False)
+                    ]
+                    if not found_assets.empty:
+                        asset = found_assets.iloc[0]
+                        location = asset.get(self.city_col, 'غير محدد')
+                        building = asset.get(self.building_col, 'غير محدد')
+                        return f"**الموقع:** {location} - {building}"
+            
+            return "يرجى تحديد الأصل الذي تبحث عنه (رقم الوسم أو الوصف)"
+        
+        return f"**المدن المتاحة:** {', '.join([str(c) for c in cities])}"
+    
+    def handle_search_questions(self, question):
+        """معالجة أسئلة البحث"""
+        # استخراج كلمات البحث من السؤال
+        search_terms = []
+        for word in question.split():
+            if len(word) > 2 and word not in ['ابحث', 'عن', 'عرض', 'أرني', 'اظهر']:
+                search_terms.append(word)
+        
+        if not search_terms:
+            return "يرجى تحديد ما تريد البحث عنه (مثال: ابحث عن أجهزة كمبيوتر)"
+        
+        # البحث في البيانات
+        results = []
+        for term in search_terms:
+            mask = (
+                self.df_processed[self.desc_col].astype(str).str.contains(term, na=False, case=False) |
+                self.df_processed[self.tag_col].astype(str).str.contains(term, na=False, case=False) |
+                self.df_processed[self.unique_asset_col].astype(str).str.contains(term, na=False, case=False)
+            )
+            results.extend(self.df_processed[mask].to_dict('records'))
+        
+        if results:
+            response = f"**تم العثور على {len(results)} نتيجة:**\n"
+            for i, asset in enumerate(results[:5], 1):  # عرض أول 5 نتائج فقط
+                desc = asset.get(self.desc_col, 'غير محدد')
+                tag = asset.get(self.tag_col, 'غير محدد')
+                cost = asset.get(self.cost_col, 0)
+                response += f"\n{i}. {desc} (الوسم: {tag}) - {cost:,.0f} ريال"
+            
+            if len(results) > 5:
+                response += f"\n\n... وعرض {len(results) - 5} نتيجة إضافية"
+            
+            return response
+        else:
+            return "❌ لم يتم العثور على نتائج تطابق بحثك."
+    
+    def handle_summary_questions(self, question):
+        """معالجة أسئلة الملخص والإحصائيات"""
+        response = f"**ملخص شامل للأصول:**\n\n"
+        response += f"• إجمالي عدد الأصول: **{self.total_assets:,}**\n"
+        response += f"• إجمالي التكلفة: **{self.total_cost:,.0f} ريال**\n"
+        response += f"• صافي القيمة الدفترية: **{self.total_nbv:,.0f} ريال**\n"
+        
+        if self.cost_converted and self.nbv_converted:
+            depreciation = self.total_cost - self.total_nbv
+            dep_rate = (depreciation / self.total_cost * 100) if self.total_cost > 0 else 0
+            response += f"• إجمالي الاستهلاك: **{depreciation:,.0f} ريال**\n"
+            response += f"• معدل الاستهلاك: **{dep_rate:.1f}%**\n"
+        
+        if self.city_col in self.df_processed.columns:
+            city_stats = self.df_processed[self.city_col].value_counts().head(3)
+            response += f"\n**أهم المدن:**\n"
+            for city, count in city_stats.items():
+                response += f"• {city}: {count} أصل\n"
+        
+        return response
+    
+    def handle_general_questions(self, question):
+        """معالجة الأسئلة العامة"""
+        general_responses = [
+            "يمكنني مساعدتك في:\n• معرفة عدد الأصول وتكلفتها\n• البحث عن أصول محددة\n• تحليل الاستهلاك والقيمة\n• توزيع الأصول جغرافياً\n\nما الذي تريد معرفته؟",
+            "أنا مساعدك الذكي لفهم بيانات الأصول. اسألني عن:\n- الإحصائيات العامة\n- تكاليف الأصول\n- مواقع التوزيع\n- تحليل الاستهلاك",
+            "مرحباً! أنا هنا لمساعدتك في تحليل بيانات الأصول. جرب أن تسأل:\n'كم عدد الأصول؟'\n'ما إجمالي التكلفة؟'\n'أين توجد أجهزة الكمبيوتر؟'"
+        ]
+        
+        return np.random.choice(general_responses)
 
-    pdf.ln(2)
-    pdf.set_font("Arial","B",12); pdf.cell(0, 8, ar("رابعاً: الموقع"), 0, 1, "R")
-    for k, key in [("الدولة","Country"),("المنطقة","Region"),("المدينة","City"),
-                   ("رقم المبنى","Building"),("رقم الدور","Floor"),
-                   ("رقم الغرفة/المكتب","Room/Office"),("الإحداثيات","Coordinates")]:
-        row(k, key)
+# إنشاء المساعد الذكي
+ai_assistant = AssetAIAssistant(df)
 
-    # QR code with Asset ID
-    asset_id = record.get(colmap.get("Asset Unique No"), "")
-    if asset_id:
-        qr = qrcode.QRCode(box_size=3, border=2)
-        qr.add_data(str(asset_id)); qr.make(fit=True)
-        img = qr.make_image()
-        buf = BytesIO()
-        img.save(buf, format="PNG"); buf.seek(0)
-        x = pdf.get_x(); y = pdf.get_y()
-        pdf.image(buf, x=10, y=y, w=25)  # place qr on left bottom
-        pdf.set_y(y + 30)
+# واجهة المساعد الذكي
+def ai_chat_interface():
+    st.markdown("---")
+    st.markdown('<div class="ai-assistant">', unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; color: white;'>🤖 مساعد الأصول الذكي</h2>", unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # تهيئة سجل المحادثة
+    if 'chat_history' not in st.session_state:
+        st.session_state.chat_history = []
+    
+    # عرض سجل المحادثة
+    st.markdown("### 💬 محادثتك")
+    for message in st.session_state.chat_history:
+        if message['type'] == 'user':
+            st.markdown(f'<div class="user-message"><strong>أنت:</strong> {message["content"]}</div>', unsafe_allow_html=True)
+        else:
+            st.markdown(f'<div class="ai-response"><strong>المساعد:</strong> {message["content"]}</div>', unsafe_allow_html=True)
+    
+    # أمثلة للأسئلة
+    st.markdown("### 💡 أمثلة للأسئلة التي يمكنك طرحها:")
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("كم عدد الأصول؟", use_container_width=True):
+            st.session_state.quick_question = "كم عدد الأصول؟"
+    
+    with col2:
+        if st.button("ما إجمالي التكلفة؟", use_container_width=True):
+            st.session_state.quick_question = "ما إجمالي التكلفة؟"
+    
+    with col3:
+        if st.button("أعرض ملخص عام", use_container_width=True):
+            st.session_state.quick_question = "أعرض ملخص عام"
+    
+    # مدخل السؤال
+    st.markdown("### 💭 اكتب سؤالك هنا:")
+    question = st.text_input(
+        "اسألني عن أي شيء يتعلق بالأصول...",
+        placeholder="مثال: كم عدد الأصول في الرياض؟ أو ما هي أغلى الأصول؟",
+        key="question_input"
+    )
+    
+    # معالجة السؤال
+    if st.button("إرسال السؤال", type="primary", use_container_width=True) or 'quick_question' in st.session_state:
+        if 'quick_question' in st.session_state:
+            question = st.session_state.quick_question
+            del st.session_state.quick_question
+        
+        if question.strip():
+            # إضافة سؤال المستخدم للسجل
+            st.session_state.chat_history.append({
+                'type': 'user',
+                'content': question,
+                'timestamp': datetime.now()
+            })
+            
+            # توليد الرد
+            with st.spinner("🤔 المساعد يفكر..."):
+                response = ai_assistant.generate_response(question)
+            
+            # إضافة رد المساعد للسجل
+            st.session_state.chat_history.append({
+                'type': 'assistant',
+                'content': response,
+                'timestamp': datetime.now()
+            })
+            
+            # إعادة تحميل الصفحة لعرض الرد الجديد
+            st.rerun()
+    
+    # خيارات إضافية
+    st.markdown("---")
+    if st.button("🗑️ مسح المحادثة", use_container_width=True):
+        st.session_state.chat_history = []
+        st.rerun()
 
-    out = pdf.output(dest="S").encode("latin1", "ignore")
-    return out
+# العرض حسب الوضع المختار
+if display_mode == "المساعد الذكي":
+    ai_chat_interface()
+else:
+    st.info("🚀 استخدم المساعد الذكي في الأعلى للحصول على إجابات فورية عن بياناتك!")
+
+# تذييل الصفحة
+st.markdown("---")
+st.markdown(
+    '<div style="text-align: center; padding: 20px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; border-radius: 10px;">'
+    '<h3 style="margin:0;">✅ الإصدار 7.0 - المساعد الذكي</h3>'
+    '<p style="margin:5px 0 0 0;">اسألني عن أي شيء في بيانات الأصول!</p>'
+    '</div>', 
+    unsafe_allow_html=True
+)
