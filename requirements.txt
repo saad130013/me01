@@ -1,18 +1,7 @@
-streamlit
-pandas
-openpyxl
-xlsxwriter
-matplotlib
-reportlab
-arabic-reshaper
-python-bidi
-streamlit
-pandas
-openpyxl
-fpdf2
-arabic-reshaper
-python-bidi
-qrcode
 
+streamlit
+pandas
+openpyxl
 matplotlib
-xlsxwriter
+scikit-learn
+fpdf2
